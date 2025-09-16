@@ -11,8 +11,8 @@ x265, ^
 zlib, ^
 openssl ^
 )
-SET PGOPTIONS=--enable-gpl --enable-version3 --enable-nonfree --enable-small --enable-decoder=h264_qsv --enable-decoder=hevc_qsv --enable-encoder=h264_qsv --enable-encoder=hevc_qsv --enable-bzlib --enable-sdl2 --enable-zlib --enable-libopus --enable-libx264 --enable-libx265 --enable-libmfx --enable-openssl
-@REM --enable-cuda-nvcc --enable-ffnvcodec --enable-cuda --enable-cuvid --enable-nvenc
+SET PGOPTIONS=--enable-gpl --enable-version3 --enable-nonfree --enable-small --enable-decoder=h264_qsv --enable-decoder=hevc_qsv --enable-encoder=h264_qsv --enable-encoder=hevc_qsv --enable-bzlib --enable-sdl2 --enable-zlib --enable-libopus --enable-libx264 --enable-libx265 --enable-libmfx --enable-openssl --disable-vulkan
+@REM --enable-cuda-nvcc --enable-ffnvcodec --enable-cuda --enable-cuvid --enable-nvenc 
 
 REM --enable-libvmaf
 
