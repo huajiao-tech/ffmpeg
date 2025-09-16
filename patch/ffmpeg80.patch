@@ -1,0 +1,1772 @@
+diff --git a/compat/w32dlfcn.h b/compat/w32dlfcn.h
+index ac20e83..bebaf40 100644
+--- a/compat/w32dlfcn.h
++++ b/compat/w32dlfcn.h
+@@ -36,7 +36,8 @@ static inline wchar_t *get_module_filename(HMODULE module)
+ 
+     do {
+         path_size = path_size ? FFMIN(2 * path_size, INT16_MAX + 1) : MAX_PATH;
+-        new_path = av_realloc_array(path, path_size, sizeof *path);
++		//CS by lzy
++        new_path = (wchar_t *)av_realloc_array(path, path_size, sizeof *path);
+         if (!new_path) {
+             av_free(path);
+             return NULL;
+diff --git a/compat/w32pthreads.h b/compat/w32pthreads.h
+index fd6428e..f5f2f77 100644
+--- a/compat/w32pthreads.h
++++ b/compat/w32pthreads.h
+@@ -50,7 +50,7 @@ typedef struct pthread_t {
+     void *(*func)(void* arg);
+     void *arg;
+     void *ret;
+-} *pthread_t;
++} pthread_t;
+ 
+ /* use light weight mutex/condition variable API for Windows Vista and later */
+ typedef SRWLOCK pthread_mutex_t;
+@@ -74,7 +74,7 @@ typedef CONDITION_VARIABLE pthread_cond_t;
+ static av_unused THREADFUNC_RETTYPE
+ __stdcall attribute_align_arg win32thread_worker(void *arg)
+ {
+-    pthread_t h = (pthread_t)arg;
++    pthread_t *h = (pthread_t*)arg;
+     h->ret = h->func(h->arg);
+     return 0;
+ }
+@@ -82,35 +82,21 @@ __stdcall attribute_align_arg win32thread_worker(void *arg)
+ static av_unused int pthread_create(pthread_t *thread, const void *unused_attr,
+                                     void *(*start_routine)(void*), void *arg)
+ {
+-    pthread_t ret;
+-
+-    ret = av_mallocz(sizeof(*ret));
+-    if (!ret)
+-        return EAGAIN;
+-
+-    ret->func   = start_routine;
+-    ret->arg    = arg;
++    thread->func   = start_routine;
++    thread->arg    = arg;
+ #if HAVE_WINRT
+-    ret->handle = (void*)CreateThread(NULL, 0, win32thread_worker, ret,
++    thread->handle = (void*)CreateThread(NULL, 0, win32thread_worker, thread,
+                                       0, NULL);
+ #else
+-    ret->handle = (void*)_beginthreadex(NULL, 0, win32thread_worker, ret,
++    thread->handle = (void*)_beginthreadex(NULL, 0, win32thread_worker, thread,
+                                         0, NULL);
+ #endif
+-
+-    if (!ret->handle) {
+-        av_free(ret);
+-        return EAGAIN;
++    return !thread->handle;
+     }
+ 
+-    *thread = ret;
+-
+-    return 0;
+-}
+-
+ static av_unused int pthread_join(pthread_t thread, void **value_ptr)
+ {
+-    DWORD ret = WaitForSingleObject(thread->handle, INFINITE);
++    DWORD ret = WaitForSingleObject(thread.handle, INFINITE);
+     if (ret != WAIT_OBJECT_0) {
+         if (ret == WAIT_ABANDONED)
+             return EINVAL;
+@@ -118,9 +104,8 @@ static av_unused int pthread_join(pthread_t thread, void **value_ptr)
+             return EDEADLK;
+     }
+     if (value_ptr)
+-        *value_ptr = thread->ret;
+-    CloseHandle(thread->handle);
+-    av_free(thread);
++        *value_ptr = thread.ret;
++    CloseHandle(thread.handle);
+     return 0;
+ }
+ 
+diff --git a/configure b/configure
+index 732de59..57cb242 100755
+--- a/configure
++++ b/configure
+@@ -207,7 +207,7 @@ External library support:
+   --enable-gmp             enable gmp, needed for rtmp(t)e support
+                            if openssl or librtmp is not used [no]
+   --enable-gnutls          enable gnutls, needed for https support
+-                           if openssl, libtls or mbedtls is not used [no]
++                           if wolfssl, openssl, libtls or mbedtls is not used [no]
+   --disable-iconv          disable iconv [autodetect]
+   --enable-jni             enable JNI support [no]
+   --enable-ladspa          enable LADSPA audio filtering [no]
+@@ -283,7 +283,7 @@ External library support:
+   --enable-libtesseract    enable Tesseract, needed for ocr filter [no]
+   --enable-libtheora       enable Theora encoding via libtheora [no]
+   --enable-libtls          enable LibreSSL (via libtls), needed for https support
+-                           if openssl, gnutls or mbedtls is not used [no]
++                           if wolfssl, openssl, gnutls or mbedtls is not used [no]
+   --enable-libtorch        enable Torch as one DNN backend [no]
+   --enable-libtwolame      enable MP2 encoding via libtwolame [no]
+   --enable-libuavs3d       enable AVS3 decoding via libuavs3d [no]
+@@ -296,6 +296,8 @@ External library support:
+   --enable-libvpx          enable VP8 and VP9 de/encoding via libvpx [no]
+   --enable-libvvenc        enable H.266/VVC encoding via vvenc [no]
+   --enable-libwebp         enable WebP encoding via libwebp [no]
++  --enable-wolfssl         enable WolfSSL), needed for https support
++                           if openssl, gnutls, libtls or mbedtls is not used [no]
+   --enable-libx264         enable H.264 encoding via x264 [no]
+   --enable-libx265         enable HEVC encoding via x265 [no]
+   --enable-libxeve         enable EVC encoding via libxeve [no]
+@@ -317,7 +319,7 @@ External library support:
+   --disable-lzma           disable lzma [autodetect]
+   --enable-decklink        enable Blackmagic DeckLink I/O support [no]
+   --enable-mbedtls         enable mbedTLS, needed for https support
+-                           if openssl, gnutls or libtls is not used [no]
++                           if wolfssl, openssl, gnutls or libtls is not used [no]
+   --enable-mediacodec      enable Android MediaCodec support [no]
+   --enable-mediafoundation enable encoding via MediaFoundation [auto]
+   --disable-metal          disable Apple Metal framework [autodetect]
+@@ -327,7 +329,7 @@ External library support:
+   --enable-opencl          enable OpenCL processing [no]
+   --enable-opengl          enable OpenGL rendering [no]
+   --enable-openssl         enable openssl, needed for https support
+-                           if gnutls, libtls or mbedtls is not used [no]
++                           if wolfssl, gnutls, libtls or mbedtls is not used [no]
+   --enable-pocketsphinx    enable PocketSphinx, needed for asr filter [no]
+   --disable-sndio          disable sndio support [autodetect]
+   --disable-schannel       disable SChannel SSP, needed for TLS support on
+@@ -420,6 +422,7 @@ Toolchain options:
+   --extra-ldflags=ELDFLAGS add ELDFLAGS to LDFLAGS [$LDFLAGS]
+   --extra-ldexeflags=ELDFLAGS add ELDFLAGS to LDEXEFLAGS [$LDEXEFLAGS]
+   --extra-ldsoflags=ELDFLAGS add ELDFLAGS to LDSOFLAGS [$LDSOFLAGS]
++  --extra-windresflags=EWFLAGS add EWFLAGS to WINDRESFLAGS [$WINDRESFLAGS]
+   --extra-libs=ELIBS       add ELIBS [$ELIBS]
+   --extra-version=STRING   version string suffix []
+   --optflags=OPTFLAGS      override optimization-related compiler flags
+@@ -1009,6 +1012,10 @@ add_host_ldflags(){
+     append host_ldflags $($host_ldflags_filter "$@")
+ }
+ 
++add_windresflags(){
++    append WINDRESFLAGS "$@"
++}
++
+ add_compat(){
+     append compat_objs $1
+     shift
+@@ -2007,6 +2014,7 @@ EXTERNAL_LIBRARY_LIST="
+     vapoursynth
+     vulkan_static
+     whisper
++    wolfssl
+ "
+ 
+ HWACCEL_AUTODETECT_LIBRARY_LIST="
+@@ -3462,6 +3470,7 @@ hevc_vulkan_encoder_select="atsc_a53 cbs_h265 vulkan_encode"
+ hevc_v4l2m2m_decoder_deps="v4l2_m2m hevc_v4l2_m2m"
+ hevc_v4l2m2m_decoder_select="hevc_mp4toannexb_bsf"
+ hevc_v4l2m2m_encoder_deps="v4l2_m2m hevc_v4l2_m2m"
++mjpeg_mmal_decoder_deps="mmal"
+ mjpeg_cuvid_decoder_deps="cuvid"
+ mjpeg_qsv_decoder_select="qsvdec"
+ mjpeg_qsv_encoder_deps="libmfx"
+@@ -3492,6 +3501,7 @@ vc1_cuvid_decoder_deps="cuvid"
+ vc1_mmal_decoder_deps="mmal"
+ vc1_qsv_decoder_select="qsvdec"
+ vc1_v4l2m2m_decoder_deps="v4l2_m2m vc1_v4l2_m2m"
++vp8_mmal_decoder_deps="mmal"
+ vp8_cuvid_decoder_deps="cuvid"
+ vp8_mediacodec_decoder_deps="mediacodec"
+ vp8_mediacodec_encoder_deps="mediacodec"
+@@ -3513,6 +3523,7 @@ vp9_qsv_encoder_deps="libmfx MFX_CODEC_VP9"
+ vp9_qsv_encoder_select="qsvenc"
+ vp9_v4l2m2m_decoder_deps="v4l2_m2m vp9_v4l2_m2m"
+ vvc_qsv_decoder_select="vvc_mp4toannexb_bsf qsvdec"
++wmv3_mmal_decoder_deps="mmal"
+ 
+ # parsers
+ aac_parser_select="adts_header mpeg4audio"
+@@ -3875,13 +3886,13 @@ rtmpte_protocol_suggest="zlib"
+ rtmpts_protocol_select="ffrtmphttp_protocol https_protocol"
+ rtmpts_protocol_suggest="zlib"
+ rtp_protocol_select="udp_protocol"
+-schannel_conflict="openssl gnutls libtls mbedtls"
++schannel_conflict="openssl gnutls libtls mbedtls wolfssl"
+ sctp_protocol_deps="struct_sctp_event_subscribe struct_msghdr_msg_flags"
+ sctp_protocol_select="network"
+-securetransport_conflict="openssl gnutls libtls mbedtls"
++securetransport_conflict="openssl gnutls libtls mbedtls wolfssl"
+ srtp_protocol_select="rtp_protocol srtp"
+ tcp_protocol_select="network"
+-tls_protocol_deps_any="gnutls openssl schannel securetransport libtls mbedtls"
++tls_protocol_deps_any="gnutls openssl schannel securetransport libtls mbedtls wolfssl"
+ tls_protocol_select="tcp_protocol"
+ # TODO: Support libtls, mbedtls, and gnutls.
+ dtls_protocol_deps_any="openssl schannel"
+@@ -3907,7 +3918,7 @@ libsmbclient_protocol_deps="libsmbclient gplv3"
+ libsrt_protocol_deps="libsrt"
+ libsrt_protocol_select="network"
+ libssh_protocol_deps="libssh"
+-libtls_conflict="openssl gnutls mbedtls"
++libtls_conflict="openssl gnutls mbedtls wolfssl"
+ libzmq_protocol_deps="libzmq"
+ libzmq_protocol_select="network"
+ 
+@@ -4461,6 +4472,9 @@ for opt do
+         --extra-libs=*)
+             add_extralibs $optval
+         ;;
++        --extra-windresflags=*)
++            add_windresflags $optval
++        ;;
+         --disable-devices)
+             disable $INDEV_LIST $OUTDEV_LIST
+         ;;
+@@ -4942,9 +4956,11 @@ msvc_common_flags(){
+             -lz)                  echo zlib.lib ;;
+             -lx264)               echo libx264.lib ;;
+             -lstdc++)             ;;
++            -libpath:*|-LIBPATH:*)echo $flag ;;
+             -l*)                  echo ${flag#-l}.lib ;;
+             -LARGEADDRESSAWARE)   echo $flag ;;
+-            -L*) [ "$_flags_type" = "link" ] && echo -libpath:${flag#-L} ;;
++            -L*) [ "$_flags_type" = "link" ] && ([ -n "$MSYSTEM" ] && (echo $flag |sed 's,-L\/\([a-zA-Z]\)\(\/.*\),-libpath:\1:\2,' -) || echo -libpath:${flag#-L}) ;;
++            -I*)                  [ -n "$MSYSTEM" ] && (echo $flag |sed 's,-L\/\([a-zA-Z]\)\(\/.*\),-I\1:\2,' -) || echo $flag ;;
+             -Wl,*)                ;;
+             *)                    echo $flag ;;
+         esac
+@@ -5313,6 +5329,7 @@ add_cflags $extra_cflags
+ add_cxxflags $extra_cxxflags
+ add_objcflags $extra_objcflags
+ add_asflags $extra_cflags
++add_windresflags $extra_windresflags
+ 
+ if test -n "$sysroot"; then
+     case "$cc_type" in
+@@ -5996,8 +6013,12 @@ case $target_os in
+             # for shared libs.
+             LD_LIB='%.lib'
+             # Cannot build both shared and static libs with MSVC or icl.
+-            disable static
++            #disable static  # we can build shared and static libs. let user disable it explicitly
++            LIBPREF=lib #already defined. use lib as prefix to match windows system static lib name pattern(libcmt.lib, libucrt.lib etc.)
++        else
++            LIBPREF=    # if only build static libs, fftools exes always link to .lib without lib prefix
+         fi
++        LIBSUF=.lib
+         ! enabled small && test_cmd $windres --version && enable gnu_windres
+         enabled x86_32 && check_ldflags -LARGEADDRESSAWARE
+         add_cppflags -DWIN32_LEAN_AND_MEAN
+@@ -6017,7 +6038,13 @@ case $target_os in
+             SHFLAGS='-dll -def:$$(@:$(SLIBSUF)=.def) -implib:$(SUBDIR)$(SLIBNAME:$(SLIBSUF)=.lib)'
+         fi
+         enabled x86_64 && objformat="win64" || objformat="win32"
++        # ranlib is required by llvm toolchain, clang-cl is detected as msvc
++        [ "$toolchain" = msvc ] && {
+         ranlib=:
++        } || {
++          LD_LIB='%.lib'
++          SLIB_CREATE_DEF_CMD='EXTERN_PREFIX="$(EXTERN_PREFIX)" AR="$(AR_CMD)" NM="$(NM_CMD)" $(SRC_PATH)/compat/windows/makedef $(SUBDIR)lib$(NAME).ver $(OBJS) > $$(@:$(SLIBSUF)=.def)'
++        }
+         enable dos_paths
+         ;;
+     cygwin*)
+@@ -6882,7 +6909,7 @@ test_code cc "windows.h d3d12video.h" "D3D12_FEATURE_DATA_VIDEO_ENCODER_RESOURCE
+ check_type "windows.h" "DPI_AWARENESS_CONTEXT" -D_WIN32_WINNT=0x0A00
+ check_type "windows.h security.h schnlsp.h" SecPkgContext_KeyingMaterialInfo -DSECURITY_WIN32
+ check_type "d3d9.h dxva2api.h" DXVA2_ConfigPictureDecode -D_WIN32_WINNT=0x0602
+-check_func_headers mfapi.h MFCreateAlignedMemoryBuffer -lmfplat
++check_func_headers mfapi.h MFCreateAlignedMemoryBuffer -lMfplat
+ 
+ check_type "vdpau/vdpau.h" "VdpPictureInfoHEVC"
+ check_type "vdpau/vdpau.h" "VdpPictureInfoVP9"
+@@ -7014,6 +7041,7 @@ enabled decklink          && { require_headers DeckLinkAPI.h &&
+ enabled frei0r            && require_headers "frei0r.h"
+ enabled gmp               && require gmp gmp.h mpz_export -lgmp
+ enabled gnutls            && require_pkg_config gnutls gnutls gnutls/gnutls.h gnutls_global_init
++enabled wolfssl           && require_pkg_config wolfssl wolfssl wolfssl/ssl.h wolfSSL_library_init
+ enabled jni               && { [ $target_os = "android" ] && check_headers jni.h && enabled pthreads || die "ERROR: jni not found"; }
+ enabled ladspa            && require_headers "ladspa.h dlfcn.h"
+ enabled lcms2             && require_pkg_config lcms2 "lcms2 >= 2.13" lcms2.h cmsCreateContext
+@@ -7219,11 +7247,11 @@ enabled mbedtls           && { check_pkg_config mbedtls mbedtls mbedtls/x509_crt
+                                check_lib mbedtls mbedtls/ssl.h mbedtls_ssl_init -lmbedtls -lmbedx509 -lmbedcrypto ||
+                                die "ERROR: mbedTLS not found"; }
+ enabled mediacodec        && { enabled jni || die "ERROR: mediacodec requires --enable-jni"; }
+-enabled mmal              && { check_lib mmal interface/mmal/mmal.h mmal_port_connect -lmmal_core -lmmal_util -lmmal_vc_client -lbcm_host ||
++enabled mmal              && { check_lib mmal interface/mmal/mmal.h mmal_port_connect -lmmal_core -lmmal_util -lmmal_vc_client -lbcm_host -lvcos -lpthread ||
+                                { ! enabled cross_compile &&
+                                  add_cflags -isystem/opt/vc/include/ -isystem/opt/vc/include/interface/vmcs_host/linux -isystem/opt/vc/include/interface/vcos/pthreads -fgnu89-inline &&
+                                  add_ldflags -L/opt/vc/lib/ &&
+-                                 check_lib mmal interface/mmal/mmal.h mmal_port_connect -lmmal_core -lmmal_util -lmmal_vc_client -lbcm_host; } ||
++                                 check_lib mmal interface/mmal/mmal.h mmal_port_connect -lmmal_core -lmmal_util -lmmal_vc_client -lbcm_host -lvcos -lpthread; } ||
+                                die "ERROR: mmal not found" &&
+                                check_func_headers interface/mmal/mmal.h "MMAL_PARAMETER_VIDEO_MAX_NUM_CALLBACKS"; }
+ enabled ohcodec           && { check_lib ohcodec "multimedia/player_framework/native_avcodec_videodecoder.h multimedia/player_framework/native_avcodec_videoencoder.h" \
+@@ -7437,7 +7465,7 @@ if enabled uwp; then
+     d3d11va_extralibs="-ldxgi -ld3d11"
+     d3d12va_extralibs="-ldxgi -ld3d12"
+     vaapi_win32_extralibs="-ldxgi"
+-    mediafoundation_extralibs="-lmfplat $mediafoundation_extralibs"
++    mediafoundation_extralibs="-lMfplat $mediafoundation_extralibs"
+ fi
+ 
+ enabled libdrm &&
+@@ -7724,6 +7752,9 @@ test_cc -mno-red-zone <<EOF && noredzone_flags="-mno-red-zone"
+ int x;
+ EOF
+ 
++check_ldflags --icf=safe || check_ldflags -Wl,--icf=safe || { # ld or clang7 + lld
++    check_cflags -faddrsig && (check_ldflags --icf=all || check_ldflags -Wl,--icf=all)
++}
+ 
+ if enabled icc; then
+     # Just warnings, no remarks
+@@ -8306,6 +8337,7 @@ DOXYGEN=$doxygen
+ LDFLAGS=$LDFLAGS
+ LDEXEFLAGS=$LDEXEFLAGS
+ LDSOFLAGS=$LDSOFLAGS
++WINDRESFLAGS=$WINDRESFLAGS
+ SHFLAGS=$(echo $($ldflags_filter $SHFLAGS))
+ ASMSTRIPFLAGS=$ASMSTRIPFLAGS
+ X86ASMFLAGS=$X86ASMFLAGS
+diff --git a/fftools/cmdutils.c b/fftools/cmdutils.c
+index dc093b0..a1e6a8b 100644
+--- a/fftools/cmdutils.c
++++ b/fftools/cmdutils.c
+@@ -31,6 +31,7 @@
+ 
+ #include "config.h"
+ #include "compat/va_copy.h"
++#include "libavformat/url.h"
+ #include "libavformat/avformat.h"
+ #include "libswscale/swscale.h"
+ #include "libswresample/swresample.h"
+@@ -1542,3 +1543,26 @@ int check_avoptions(AVDictionary *m)
+ 
+     return 0;
+ }
++
++//CS by lzy
++//***********************************************************************************//
++static const AVOption exasync_options[] = {
++    {NULL},
++};
++
++static const AVClass exasync_context_class = {
++    .class_name = "Exasync",
++    .item_name = av_default_item_name,
++    .option = exasync_options,
++    .version = LIBAVUTIL_VERSION_INT,
++};
++
++const URLProtocol ff_exasync_protocol = {
++    .name = "exasync",
++    .url_open2 = NULL,
++    .url_read = NULL,
++    .url_seek = NULL,
++    .url_close = NULL,
++    .priv_data_size = 0,
++    .priv_data_class = &exasync_context_class,
++};
+diff --git a/libavcodec/allcodecs.c b/libavcodec/allcodecs.c
+index f5ec2e0..19906b1 100644
+--- a/libavcodec/allcodecs.c
++++ b/libavcodec/allcodecs.c
+@@ -887,6 +887,7 @@ extern const FFCodec ff_hevc_videotoolbox_encoder;
+ extern const FFCodec ff_hevc_vulkan_encoder;
+ extern const FFCodec ff_libkvazaar_encoder;
+ extern const FFCodec ff_mjpeg_cuvid_decoder;
++extern const FFCodec ff_mjpeg_mmal_decoder;
+ extern const FFCodec ff_mjpeg_qsv_encoder;
+ extern const FFCodec ff_mjpeg_qsv_decoder;
+ extern const FFCodec ff_mjpeg_vaapi_encoder;
+@@ -906,6 +907,7 @@ extern const FFCodec ff_vc1_cuvid_decoder;
+ extern const FFCodec ff_vp8_cuvid_decoder;
+ extern const FFCodec ff_vp8_mediacodec_decoder;
+ extern const FFCodec ff_vp8_mediacodec_encoder;
++extern const FFCodec ff_vp8_mmal_decoder;
+ extern const FFCodec ff_vp8_qsv_decoder;
+ extern const FFCodec ff_vp8_v4l2m2m_encoder;
+ extern const FFCodec ff_vp8_vaapi_encoder;
+@@ -917,6 +919,7 @@ extern const FFCodec ff_vp9_qsv_decoder;
+ extern const FFCodec ff_vp9_vaapi_encoder;
+ extern const FFCodec ff_vp9_qsv_encoder;
+ extern const FFCodec ff_vvc_qsv_decoder;
++extern const FFCodec ff_wmv3_mmal_decoder;
+ 
+ // null codecs
+ extern const FFCodec ff_vnull_decoder;
+diff --git a/libavcodec/avcodec.h b/libavcodec/avcodec.h
+index 108df5a..5dd81c4 100644
+--- a/libavcodec/avcodec.h
++++ b/libavcodec/avcodec.h
+@@ -2021,6 +2021,10 @@ typedef struct AVHWAccel {
+  */
+ #define AV_HWACCEL_FLAG_UNSAFE_OUTPUT (1 << 3)
+ 
++/**
++ * Hardware acceleration can use it's software implementation.
++ */
++#define AV_HWACCEL_FLAG_ALLOW_SOFTWARE (1 << 8)
+ /**
+  * @}
+  */
+diff --git a/libavcodec/cuviddec.c b/libavcodec/cuviddec.c
+index be183fc..91c7068 100644
+--- a/libavcodec/cuviddec.c
++++ b/libavcodec/cuviddec.c
+@@ -318,6 +318,12 @@ static int CUDAAPI cuvid_handle_video_sequence(void *opaque, CUVIDEOFORMAT* form
+         if (ctx->internal_error < 0)
+             return 0;
+         ctx->cudecoder = NULL;
++
++		////CS by lfs
++		if (hwframe_ctx->pool)
++		{
++			av_buffer_pool_uninit(&hwframe_ctx->pool);
++    }
+     }
+ 
+     if (hwframe_ctx->pool && (
+@@ -477,6 +483,11 @@ static int cuvid_is_buffer_full(AVCodecContext *avctx)
+ {
+     CuvidContext *ctx = avctx->priv_data;
+ 
++	//CS by lfs
++	if (!ctx->frame_queue) {
++		return 0;
++	}
++
+     int shift = 0;
+     if (ctx->deint_mode != cudaVideoDeinterlaceMode_Weave && !ctx->drop_second_field)
+         shift = 1;
+@@ -590,8 +601,8 @@ static int cuvid_output_frame(AVCodecContext *avctx, AVFrame *frame)
+     ret = CHECK_CU(ctx->cudl->cuCtxPushCurrent(cuda_ctx));
+     if (ret < 0)
+         return ret;
+-
+-    if (av_fifo_read(ctx->frame_queue, &parsed_frame, 1) >= 0) {
++	//CS by lzy
++    if (ctx->frame_queue && av_fifo_read(ctx->frame_queue, &parsed_frame, 1) >= 0) {
+         const AVPixFmtDescriptor *pixdesc;
+         CUVIDPROCPARAMS params;
+         unsigned int pitch = 0;
+@@ -1188,7 +1199,9 @@ static void cuvid_flush(AVCodecContext *avctx)
+     if (ret < 0)
+         goto error;
+ 
++    if(ctx->frame_queue) {  //CS by lzy
+     av_fifo_reset2(ctx->frame_queue);
++    }
+ 
+     if (ctx->cudecoder) {
+         ctx->cvdl->cuvidDestroyDecoder(ctx->cudecoder);
+diff --git a/libavcodec/h264dec.h b/libavcodec/h264dec.h
+index 1df9901..0f99223 100644
+--- a/libavcodec/h264dec.h
++++ b/libavcodec/h264dec.h
+@@ -58,7 +58,7 @@
+  * The maximum number of slices supported by the decoder.
+  * must be a power of 2
+  */
+-#define MAX_SLICES 32
++#define MAX_SLICES 64
+ 
+ #ifdef ALLOW_INTERLACE
+ #define MB_MBAFF(h)    (h)->mb_mbaff
+diff --git a/libavcodec/mediacodecdec_common.c b/libavcodec/mediacodecdec_common.c
+index ae336ab..4b87a64 100644
+--- a/libavcodec/mediacodecdec_common.c
++++ b/libavcodec/mediacodecdec_common.c
+@@ -590,10 +590,15 @@ static int mediacodec_dec_parse_video_format(AVCodecContext *avctx, MediaCodecDe
+     }
+ 
+     /* Optional fields */
+-    AMEDIAFORMAT_GET_INT32(s->crop_top,    "crop-top",    0);
+-    AMEDIAFORMAT_GET_INT32(s->crop_bottom, "crop-bottom", 0);
+-    AMEDIAFORMAT_GET_INT32(s->crop_left,   "crop-left",   0);
+-    AMEDIAFORMAT_GET_INT32(s->crop_right,  "crop-right",  0);
++    if (ff_AMediaFormat_getInt32(s->format, "crop-top", &s->crop_top) && ff_AMediaFormat_getInt32(s->format, "crop-bottom", &s->crop_bottom))
++        height = s->crop_bottom + 1 - s->crop_top;
++    else
++        height = s->height;
++
++    if (ff_AMediaFormat_getInt32(s->format, "crop-left", &s->crop_left) && ff_AMediaFormat_getInt32(s->format, "crop-right", &s->crop_right))
++        width = s->crop_right + 1 - s->crop_left;
++    else
++        width = s->width;
+ 
+     // Try "crop" for NDK
+     // MediaTek SOC return some default value like Rect(0, 0, 318, 238)
+diff --git a/libavcodec/mmaldec.c b/libavcodec/mmaldec.c
+index e425911..86894d6 100644
+--- a/libavcodec/mmaldec.c
++++ b/libavcodec/mmaldec.c
+@@ -72,6 +72,7 @@ typedef struct MMALDecodeContext {
+     AVClass *av_class;
+     int extra_buffers;
+     int extra_decoder_buffers;
++    int copy_frame;
+ 
+     MMAL_COMPONENT_T *decoder;
+     MMAL_QUEUE_T *queue_decoded_frames;
+@@ -148,7 +149,6 @@ static int ffmmal_set_ref(AVFrame *frame, FFPoolRef *pool,
+     atomic_fetch_add_explicit(&ref->pool->refcount, 1, memory_order_relaxed);
+     mmal_buffer_header_acquire(buffer);
+ 
+-    frame->format = AV_PIX_FMT_MMAL;
+     frame->data[3] = (uint8_t *)ref->buffer;
+     return 0;
+ }
+@@ -305,6 +305,8 @@ static int ffmal_update_format(AVCodecContext *avctx)
+         goto fail;
+ 
+     if (avctx->pix_fmt == AV_PIX_FMT_MMAL) {
++        if ((status = mmal_port_parameter_set_boolean(decoder->output[0], MMAL_PARAMETER_ZERO_COPY, 1)))
++            goto fail;
+         format_out->encoding = MMAL_ENCODING_OPAQUE;
+     } else {
+         format_out->encoding_variant = format_out->encoding = MMAL_ENCODING_I420;
+@@ -342,7 +344,8 @@ static int ffmal_update_format(AVCodecContext *avctx)
+         FFMAX(decoder->output[0]->buffer_size_min, decoder->output[0]->buffer_size_recommended);
+     decoder->output[0]->buffer_num =
+         FFMAX(decoder->output[0]->buffer_num_min, decoder->output[0]->buffer_num_recommended) + ctx->extra_buffers;
+-    ctx->pool_out->pool = mmal_pool_create(decoder->output[0]->buffer_num,
++    ctx->pool_out->pool = mmal_port_pool_create(decoder->output[0],
++                                           decoder->output[0]->buffer_num,
+                                            decoder->output[0]->buffer_size);
+     if (!ctx->pool_out->pool) {
+         ret = AVERROR(ENOMEM);
+@@ -385,15 +388,24 @@ static av_cold int ffmmal_init_decoder(AVCodecContext *avctx)
+     format_in = decoder->input[0]->format;
+     format_in->type = MMAL_ES_TYPE_VIDEO;
+     switch (avctx->codec_id) {
++    case AV_CODEC_ID_MJPEG:
++        format_in->encoding = MMAL_ENCODING_MJPEG;
++        break;
+     case AV_CODEC_ID_MPEG2VIDEO:
+         format_in->encoding = MMAL_ENCODING_MP2V;
+         break;
+     case AV_CODEC_ID_MPEG4:
+         format_in->encoding = MMAL_ENCODING_MP4V;
+         break;
++    case AV_CODEC_ID_VP8:
++        format_in->encoding = MMAL_ENCODING_VP8;
++        break;
+     case AV_CODEC_ID_VC1:
+         format_in->encoding = MMAL_ENCODING_WVC1;
+         break;
++    case AV_CODEC_ID_WMV3: // may be not enabled
++        format_in->encoding = MMAL_ENCODING_WMV3;
++        break;
+     case AV_CODEC_ID_H264:
+     default:
+         format_in->encoding = MMAL_ENCODING_H264;
+@@ -641,12 +653,14 @@ static int ffmal_copy_frame(AVCodecContext *avctx,  AVFrame *frame,
+ 
+         if ((ret = ffmmal_set_ref(frame, ctx->pool_out, buffer)) < 0)
+             goto done;
++        frame->format = AV_PIX_FMT_MMAL;
+     } else {
+         int w = FFALIGN(avctx->width, 32);
+         int h = FFALIGN(avctx->height, 16);
+         uint8_t *src[4];
+         int linesize[4];
+ 
++        if (ctx->copy_frame) {
+         if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+             goto done;
+ 
+@@ -655,6 +669,18 @@ static int ffmal_copy_frame(AVCodecContext *avctx,  AVFrame *frame,
+                              avctx->pix_fmt, w, h, 1);
+         av_image_copy2(frame->data, frame->linesize, src, linesize,
+                        avctx->pix_fmt, avctx->width, avctx->height);
++        } else {
++            if ((ret = ff_decode_frame_props(avctx, frame)) < 0)
++                goto done;
++            /* buffer->type->video.offset/pitch[i]; is always 0 */
++            av_image_fill_arrays(src, linesize,
++                                buffer->data + buffer->type->video.offset[0],
++                                avctx->pix_fmt, w, h, 1);
++            if ((ret = ffmmal_set_ref(frame, ctx->pool_out, buffer)) < 0)
++                goto done;
++            memcpy(frame->data, src, sizeof(src));
++            memcpy(frame->linesize, linesize, sizeof(linesize));
++    }
+     }
+ 
+     frame->sample_aspect_ratio = avctx->sample_aspect_ratio;
+@@ -822,9 +848,24 @@ static const AVCodecHWConfigInternal *const mmal_hw_configs[] = {
+     NULL
+ };
+ 
++AVHWAccel ff_vp8_mmal_hwaccel = {
++    .name       = "vp8_mmal",
++    .type       = AVMEDIA_TYPE_VIDEO,
++    .id         = AV_CODEC_ID_VP8,
++    .pix_fmt    = AV_PIX_FMT_MMAL,
++};
++
++AVHWAccel ff_wmv3_mmal_hwaccel = {
++    .name       = "wmv3_mmal",
++    .type       = AVMEDIA_TYPE_VIDEO,
++    .id         = AV_CODEC_ID_WMV3,
++    .pix_fmt    = AV_PIX_FMT_MMAL,
++};
++
+ static const AVOption options[]={
+     {"extra_buffers", "extra buffers", offsetof(MMALDecodeContext, extra_buffers), AV_OPT_TYPE_INT, {.i64 = 10}, 0, 256, 0},
+     {"extra_decoder_buffers", "extra MMAL internal buffered frames", offsetof(MMALDecodeContext, extra_decoder_buffers), AV_OPT_TYPE_INT, {.i64 = 10}, 0, 256, 0},
++    {"copy_frame", "copy deocded data to avframe", offsetof(MMALDecodeContext, copy_frame), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 256, 0},
+     {NULL}
+ };
+ 
+@@ -854,6 +895,9 @@ static const AVClass ffmmal_dec_class = {
+     };
+ 
+ FFMMAL_DEC(h264, AV_CODEC_ID_H264)
++FFMMAL_DEC(mjpeg, AV_CODEC_ID_MJPEG)
+ FFMMAL_DEC(mpeg2, AV_CODEC_ID_MPEG2VIDEO)
+ FFMMAL_DEC(mpeg4, AV_CODEC_ID_MPEG4)
+ FFMMAL_DEC(vc1, AV_CODEC_ID_VC1)
++FFMMAL_DEC(vp8, AV_CODEC_ID_VP8)
++FFMMAL_DEC(wmv3, AV_CODEC_ID_WMV3)
+diff --git a/libavcodec/nvenc.c b/libavcodec/nvenc.c
+index d81be00..560d97a 100644
+--- a/libavcodec/nvenc.c
++++ b/libavcodec/nvenc.c
+@@ -189,7 +189,7 @@ static int nvenc_print_error(AVCodecContext *avctx, NVENCSTATUS err,
+     NvencContext *ctx = avctx->priv_data;
+     NV_ENCODE_API_FUNCTION_LIST *p_nvenc = &ctx->nvenc_dload_funcs.nvenc_funcs;
+ 
+-    if (p_nvenc && ctx->nvencoder)
++    if (p_nvenc && ctx->nvencoder && p_nvenc->nvEncGetLastErrorString)
+         details = p_nvenc->nvEncGetLastErrorString(ctx->nvencoder);
+ #endif
+ 
+@@ -338,20 +338,35 @@ static void nvenc_print_driver_requirement(AVCodecContext *avctx, int level)
+     av_log(avctx, level, "The minimum required Nvidia driver for nvenc is %s or newer\n", minver);
+ }
+ 
++static inline uint32_t struct_ver_rt(NvencContext* ctx, uint32_t struct_ver)
++{
++    return ((uint32_t)ctx->apiver_rt | ((struct_ver)<<16) | (0x7 << 28));
++}
++
++static inline uint32_t api_ver(uint32_t major_ver, uint32_t minor_ver)
++{
++    return major_ver | (minor_ver << 24);
++}
++
+ static av_cold int nvenc_load_libraries(AVCodecContext *avctx)
+ {
+     NvencContext *ctx            = avctx->priv_data;
+     NvencDynLoadFunctions *dl_fn = &ctx->nvenc_dload_funcs;
+     NVENCSTATUS err;
+     uint32_t nvenc_max_ver;
++    uint32_t nvenc_max_major;
++    uint32_t nvenc_max_minor;
++    uint32_t func_ver = NV_ENCODE_API_FUNCTION_LIST_VER;
+     int ret;
+-
+     ret = cuda_load_functions(&dl_fn->cuda_dl, avctx);
+-    if (ret < 0)
++    if (ret < 0) {
++        av_log(avctx, AV_LOG_ERROR, "cuda_load_functions error");
+         return ret;
++    }
+ 
+     ret = nvenc_load_functions(&dl_fn->nvenc_dl, avctx);
+     if (ret < 0) {
++        av_log(avctx, AV_LOG_ERROR, "nvenc_load_functions error");
+         nvenc_print_driver_requirement(avctx, AV_LOG_ERROR);
+         return ret;
+     }
+@@ -359,19 +374,25 @@ static av_cold int nvenc_load_libraries(AVCodecContext *avctx)
+     err = dl_fn->nvenc_dl->NvEncodeAPIGetMaxSupportedVersion(&nvenc_max_ver);
+     if (err != NV_ENC_SUCCESS)
+         return nvenc_print_error(avctx, err, "Failed to query nvenc max version");
+-
+-    av_log(avctx, AV_LOG_VERBOSE, "Loaded Nvenc version %d.%d\n", nvenc_max_ver >> 4, nvenc_max_ver & 0xf);
++    nvenc_max_major = nvenc_max_ver >> 4;
++    nvenc_max_minor = nvenc_max_ver & 0xf;
++    //ctx->apiver_rt = NVENCAPI_VERSION;
++    ctx->apiver_rt = api_ver(nvenc_max_major, nvenc_max_minor);
++    ctx->config_ver_rt = struct_ver_rt(ctx, 7) | (1<<31); /*NV_ENC_CONFIG_VER */
++    if (ctx->apiver_rt < api_ver(8, 1))
++        ctx->config_ver_rt = struct_ver_rt(ctx, 6) | (1<<31);
++    func_ver = struct_ver_rt(ctx, 2);
++    av_log(avctx, AV_LOG_INFO, "Loaded Nvenc version %d.%d\n", nvenc_max_major, nvenc_max_minor);
+ 
+     if ((NVENCAPI_MAJOR_VERSION << 4 | NVENCAPI_MINOR_VERSION) > nvenc_max_ver) {
+-        av_log(avctx, AV_LOG_ERROR, "Driver does not support the required nvenc API version. "
++        av_log(avctx, AV_LOG_WARNING, "Driver does not support the required nvenc API version. "
+                "Required: %d.%d Found: %d.%d\n",
+                NVENCAPI_MAJOR_VERSION, NVENCAPI_MINOR_VERSION,
+-               nvenc_max_ver >> 4, nvenc_max_ver & 0xf);
+-        nvenc_print_driver_requirement(avctx, AV_LOG_ERROR);
+-        return AVERROR(ENOSYS);
++               nvenc_max_major, nvenc_max_minor);
++        nvenc_print_driver_requirement(avctx, AV_LOG_WARNING);
++        //return AVERROR(ENOSYS);
+     }
+-
+-    dl_fn->nvenc_funcs.version = NV_ENCODE_API_FUNCTION_LIST_VER;
++    dl_fn->nvenc_funcs.version = func_ver;
+ 
+     err = dl_fn->nvenc_dl->NvEncodeAPICreateInstance(&dl_fn->nvenc_funcs);
+     if (err != NV_ENC_SUCCESS)
+@@ -412,8 +433,8 @@ static av_cold int nvenc_open_session(AVCodecContext *avctx)
+     NV_ENCODE_API_FUNCTION_LIST *p_nvenc = &ctx->nvenc_dload_funcs.nvenc_funcs;
+     NVENCSTATUS ret;
+ 
+-    params.version    = NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS_VER;
+-    params.apiVersion = NVENCAPI_VERSION;
++    params.version    = struct_ver_rt(ctx, 1);
++    params.apiVersion = ctx->apiver_rt;
+     if (ctx->d3d11_device) {
+         params.device     = ctx->d3d11_device;
+         params.deviceType = NV_ENC_DEVICE_TYPE_DIRECTX;
+@@ -474,7 +495,7 @@ static int nvenc_check_cap(AVCodecContext *avctx, NV_ENC_CAPS cap)
+     NV_ENC_CAPS_PARAM params        = { 0 };
+     int ret, val = 0;
+ 
+-    params.version     = NV_ENC_CAPS_PARAM_VER;
++    params.version     = struct_ver_rt(ctx, 1);//NV_ENC_CAPS_PARAM_VER;
+     params.capsToQuery = cap;
+ 
+     ret = p_nvenc->nvEncGetEncodeCaps(ctx->nvencoder, ctx->init_encode_params.encodeGUID, &params, &val);
+@@ -882,7 +903,7 @@ static av_cold void set_constqp(AVCodecContext *avctx)
+ #endif
+ 
+     rc->rateControlMode = NV_ENC_PARAMS_RC_CONSTQP;
+-
++    /*rc->reservedBitField1 = 0;*/
+     if (ctx->init_qp_p >= 0) {
+         rc->constQP.qpInterP = ctx->init_qp_p;
+         if (ctx->init_qp_i >= 0 && ctx->init_qp_b >= 0) {
+@@ -1287,6 +1308,9 @@ static av_cold int nvenc_setup_h264_config(AVCodecContext *avctx)
+         || vui->videoFormat != 5
+         || vui->videoFullRangeFlag != 0);
+ 
++	//CS by lfs, cuvid min_num_decode_surfaces can get from this;
++    vui->bitstreamRestrictionFlag = 1;
++
+     if (ctx->max_slice_size > 0) {
+         h264->sliceMode = 1;
+         h264->sliceModeData = ctx->max_slice_size;
+@@ -1478,6 +1502,9 @@ static av_cold int nvenc_setup_hevc_config(AVCodecContext *avctx)
+         || vui->videoFormat != 5
+         || vui->videoFullRangeFlag != 0);
+ 
++	//CS by lfs, cuvid min_num_decode_surfaces can get from this;
++	vui->bitstreamRestrictionFlag = 1;
++
+     if (ctx->max_slice_size > 0) {
+         hevc->sliceMode = 1;
+         hevc->sliceModeData = ctx->max_slice_size;
+@@ -1820,16 +1847,16 @@ static av_cold int nvenc_setup_encoder(AVCodecContext *avctx)
+     int res = 0;
+     int dw, dh;
+ 
+-    ctx->encode_config.version = NV_ENC_CONFIG_VER;
+-    ctx->init_encode_params.version = NV_ENC_INITIALIZE_PARAMS_VER;
++    ctx->encode_config.version = ctx->config_ver_rt;//NV_ENC_CONFIG_VER;
++    ctx->init_encode_params.version = struct_ver_rt(ctx, 5) | (1<<31);//NV_ENC_INITIALIZE_PARAMS_VER;
+ 
+     ctx->init_encode_params.encodeHeight = avctx->height;
+     ctx->init_encode_params.encodeWidth = avctx->width;
+ 
+     ctx->init_encode_params.encodeConfig = &ctx->encode_config;
+ 
+-    preset_config.version = NV_ENC_PRESET_CONFIG_VER;
+-    preset_config.presetCfg.version = NV_ENC_CONFIG_VER;
++    preset_config.version = struct_ver_rt(ctx, 4) | (1<<31);// NV_ENC_PRESET_CONFIG_VER;
++    preset_config.presetCfg.version = ctx->config_ver_rt;//NV_ENC_CONFIG_VER;
+ 
+ #ifdef NVENC_HAVE_NEW_PRESETS
+     ctx->init_encode_params.tuningInfo = ctx->tuning_info;
+@@ -1839,23 +1866,24 @@ static av_cold int nvenc_setup_encoder(AVCodecContext *avctx)
+     else if (ctx->flags & NVENC_LOWLATENCY)
+         ctx->init_encode_params.tuningInfo = NV_ENC_TUNING_INFO_LOW_LATENCY;
+ 
++    if (p_nvenc->nvEncGetEncodePresetConfigEx)
+     nv_status = p_nvenc->nvEncGetEncodePresetConfigEx(ctx->nvencoder,
+         ctx->init_encode_params.encodeGUID,
+         ctx->init_encode_params.presetGUID,
+         ctx->init_encode_params.tuningInfo,
+         &preset_config);
+-#else
++    else
++#endif
+     nv_status = p_nvenc->nvEncGetEncodePresetConfig(ctx->nvencoder,
+         ctx->init_encode_params.encodeGUID,
+         ctx->init_encode_params.presetGUID,
+         &preset_config);
+-#endif
+     if (nv_status != NV_ENC_SUCCESS)
+         return nvenc_print_error(avctx, nv_status, "Cannot get the preset configuration");
+ 
+     memcpy(&ctx->encode_config, &preset_config.presetCfg, sizeof(ctx->encode_config));
+ 
+-    ctx->encode_config.version = NV_ENC_CONFIG_VER;
++    ctx->encode_config.version = ctx->config_ver_rt;//NV_ENC_CONFIG_VER;
+ 
+     compute_dar(avctx, &dw, &dh);
+     ctx->init_encode_params.darHeight = dh;
+@@ -1955,7 +1983,7 @@ static av_cold int nvenc_setup_encoder(AVCodecContext *avctx)
+     }
+ 
+ #ifdef NVENC_HAVE_CUSTREAM_PTR
+-    if (ctx->cu_context) {
++    if (ctx->cu_context && p_nvenc->nvEncSetIOCudaStreams) {
+         nv_status = p_nvenc->nvEncSetIOCudaStreams(ctx->nvencoder, &ctx->cu_stream, &ctx->cu_stream);
+         if (nv_status != NV_ENC_SUCCESS) {
+             nvenc_pop_context(avctx);
+@@ -2033,7 +2061,7 @@ static av_cold int nvenc_alloc_surface(AVCodecContext *avctx, int idx)
+ 
+     NVENCSTATUS nv_status;
+     NV_ENC_CREATE_BITSTREAM_BUFFER allocOut = { 0 };
+-    allocOut.version = NV_ENC_CREATE_BITSTREAM_BUFFER_VER;
++    allocOut.version = struct_ver_rt(ctx, 1);//NV_ENC_CREATE_BITSTREAM_BUFFER_VER;
+ 
+     if (avctx->pix_fmt == AV_PIX_FMT_CUDA || avctx->pix_fmt == AV_PIX_FMT_D3D11) {
+         ctx->surfaces[idx].in_ref = av_frame_alloc();
+@@ -2049,7 +2077,7 @@ static av_cold int nvenc_alloc_surface(AVCodecContext *avctx, int idx)
+             return AVERROR(EINVAL);
+         }
+ 
+-        allocSurf.version = NV_ENC_CREATE_INPUT_BUFFER_VER;
++        allocSurf.version = struct_ver_rt(ctx, 1);//NV_ENC_CREATE_INPUT_BUFFER_VER;
+         allocSurf.width = avctx->width;
+         allocSurf.height = avctx->height;
+         allocSurf.bufferFmt = ctx->surfaces[idx].format;
+@@ -2137,7 +2165,7 @@ static av_cold int nvenc_setup_extradata(AVCodecContext *avctx)
+     char tmpHeader[NV_MAX_SEQ_HDR_LEN];
+ 
+     NV_ENC_SEQUENCE_PARAM_PAYLOAD payload = { 0 };
+-    payload.version = NV_ENC_SEQUENCE_PARAM_PAYLOAD_VER;
++    payload.version = struct_ver_rt(ctx, 1);//NV_ENC_SEQUENCE_PARAM_PAYLOAD_VER;
+ 
+     payload.spsppsBuffer = tmpHeader;
+     payload.inBufferSize = sizeof(tmpHeader);
+@@ -2169,7 +2197,7 @@ av_cold int ff_nvenc_encode_close(AVCodecContext *avctx)
+ 
+     /* the encoder has to be flushed before it can be closed */
+     if (ctx->nvencoder) {
+-        NV_ENC_PIC_PARAMS params        = { .version        = NV_ENC_PIC_PARAMS_VER,
++        NV_ENC_PIC_PARAMS params        = { .version        = struct_ver_rt(ctx, 4) | (1<<31),// NV_ENC_PIC_PARAMS_VER,
+                                             .encodePicFlags = NV_ENC_PIC_FLAG_EOS };
+ 
+         res = nvenc_push_context(avctx);
+@@ -2393,7 +2421,7 @@ static int nvenc_register_frame(AVCodecContext *avctx, const AVFrame *frame)
+     if (idx < 0)
+         return idx;
+ 
+-    reg.version            = NV_ENC_REGISTER_RESOURCE_VER;
++    reg.version            = struct_ver_rt(ctx, 3);// NV_ENC_REGISTER_RESOURCE_VER;
+     reg.width              = frames_ctx->width;
+     reg.height             = frames_ctx->height;
+     reg.pitch              = frame->linesize[0];
+@@ -2448,7 +2476,7 @@ static int nvenc_upload_frame(AVCodecContext *avctx, const AVFrame *frame,
+             return res;
+ 
+         if (!ctx->registered_frames[reg_idx].mapped) {
+-            ctx->registered_frames[reg_idx].in_map.version = NV_ENC_MAP_INPUT_RESOURCE_VER;
++            ctx->registered_frames[reg_idx].in_map.version = struct_ver_rt(ctx, 4);// NV_ENC_MAP_INPUT_RESOURCE_VER;
+             ctx->registered_frames[reg_idx].in_map.registeredResource = ctx->registered_frames[reg_idx].regptr;
+             nv_status = p_nvenc->nvEncMapInputResource(ctx->nvencoder, &ctx->registered_frames[reg_idx].in_map);
+             if (nv_status != NV_ENC_SUCCESS) {
+@@ -2468,7 +2496,7 @@ static int nvenc_upload_frame(AVCodecContext *avctx, const AVFrame *frame,
+     } else {
+         NV_ENC_LOCK_INPUT_BUFFER lockBufferParams = { 0 };
+ 
+-        lockBufferParams.version = NV_ENC_LOCK_INPUT_BUFFER_VER;
++        lockBufferParams.version = struct_ver_rt(ctx, 1);//NV_ENC_LOCK_INPUT_BUFFER_VER;
+         lockBufferParams.inputBuffer = nvenc_frame->input_surface;
+ 
+         nv_status = p_nvenc->nvEncLockInputBuffer(ctx->nvencoder, &lockBufferParams);
+@@ -2722,7 +2750,7 @@ static int process_output_surface(AVCodecContext *avctx, AVPacket *pkt, NvencSur
+ 
+     enum AVPictureType pict_type;
+ 
+-    lock_params.version = NV_ENC_LOCK_BITSTREAM_VER;
++    lock_params.version = struct_ver_rt(ctx, 1);//NV_ENC_LOCK_BITSTREAM_VER;
+ 
+     lock_params.doNotWait = 0;
+     lock_params.outputBitstream = tmpoutsurf->output_surface;
+@@ -2945,7 +2973,7 @@ static void reconfig_encoder(AVCodecContext *avctx, const AVFrame *frame)
+     int reconfig_bitrate = 0, reconfig_dar = 0;
+     int dw, dh;
+ 
+-    params.version = NV_ENC_RECONFIGURE_PARAMS_VER;
++    params.version = struct_ver_rt(ctx, 1) | (1<<31);//NV_ENC_RECONFIGURE_PARAMS_VER;
+     params.reInitEncodeParams = ctx->init_encode_params;
+ 
+     compute_dar(avctx, &dw, &dh);
+@@ -3117,7 +3145,7 @@ static int nvenc_send_frame(AVCodecContext *avctx, const AVFrame *frame)
+     NV_ENCODE_API_FUNCTION_LIST *p_nvenc = &dl_fn->nvenc_funcs;
+ 
+     NV_ENC_PIC_PARAMS pic_params = { 0 };
+-    pic_params.version = NV_ENC_PIC_PARAMS_VER;
++    pic_params.version = struct_ver_rt(ctx, 4) | (1<<31);//NV_ENC_PIC_PARAMS_VER;
+ 
+     if ((!ctx->cu_context && !ctx->d3d11_device) || !ctx->nvencoder)
+         return AVERROR(EINVAL);
+diff --git a/libavcodec/nvenc.h b/libavcodec/nvenc.h
+index 4a4d673..8303f20 100644
+--- a/libavcodec/nvenc.h
++++ b/libavcodec/nvenc.h
+@@ -212,6 +212,9 @@ typedef struct NvencContext
+ {
+     AVClass *avclass;
+ 
++    uint32_t apiver_rt;
++    uint32_t config_ver_rt;
++
+     NvencDynLoadFunctions nvenc_dload_funcs;
+ 
+     NV_ENC_INITIALIZE_PARAMS init_encode_params;
+diff --git a/libavcodec/options_table.h b/libavcodec/options_table.h
+index 25da169..3de8716 100644
+--- a/libavcodec/options_table.h
++++ b/libavcodec/options_table.h
+@@ -394,6 +394,7 @@ static const AVOption avcodec_options[] = {
+ {"allow_high_depth", "allow to output YUV pixel formats with a different chroma sampling than 4:2:0 and/or other than 8 bits per component", 0, AV_OPT_TYPE_CONST, {.i64 = AV_HWACCEL_FLAG_ALLOW_HIGH_DEPTH }, INT_MIN, INT_MAX, V | D, .unit = "hwaccel_flags"},
+ {"allow_profile_mismatch", "attempt to decode anyway if HW accelerated decoder's supported profiles do not exactly match the stream", 0, AV_OPT_TYPE_CONST, {.i64 = AV_HWACCEL_FLAG_ALLOW_PROFILE_MISMATCH }, INT_MIN, INT_MAX, V | D, .unit = "hwaccel_flags"},
+ {"unsafe_output", "allow potentially unsafe hwaccel frame output that might require special care to process successfully", 0, AV_OPT_TYPE_CONST, {.i64 = AV_HWACCEL_FLAG_UNSAFE_OUTPUT }, INT_MIN, INT_MAX, V | D, .unit = "hwaccel_flags"},
++{"allow_software", "allow to use software implementation in HW accelerated decoder", 0, AV_OPT_TYPE_CONST, {.i64 = AV_HWACCEL_FLAG_ALLOW_SOFTWARE}, INT_MIN, INT_MAX, V | D, .unit = "hwaccel_flags"},
+ {"extra_hw_frames", "Number of extra hardware frames to allocate for the user", OFFSET(extra_hw_frames), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, INT_MAX, V|D },
+ {"discard_damaged_percentage", "Percentage of damaged samples to discard a frame", OFFSET(discard_damaged_percentage), AV_OPT_TYPE_INT, {.i64 = 95 }, 0, 100, V|D },
+ {"side_data_prefer_packet", "Comma-separated list of side data types for which user-supplied (container) data is preferred over coded bytestream",
+diff --git a/libavcodec/videotoolbox.c b/libavcodec/videotoolbox.c
+index ccba249..4a922a5 100644
+--- a/libavcodec/videotoolbox.c
++++ b/libavcodec/videotoolbox.c
+@@ -41,6 +41,10 @@
+ #include <AvailabilityMacros.h>
+ #include <TargetConditionals.h>
+ 
++#if !__has_builtin(__builtin_available)
++#define __builtin_available(...) (true)
++#endif
++
+ #ifndef kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder
+ #  define kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder CFSTR("RequireHardwareAcceleratedVideoDecoder")
+ #endif
+@@ -743,7 +747,7 @@ static void videotoolbox_decoder_callback(void *opaque,
+ 
+ static OSStatus videotoolbox_session_decode_frame(AVCodecContext *avctx)
+ {
+-    OSStatus status;
++    OSStatus status = kVTInvalidSessionErr;
+     CMSampleBufferRef sample_buf;
+     AVVideotoolboxContext *videotoolbox = videotoolbox_get_context(avctx);
+     VTContext *vtctx = avctx->internal->hwaccel_priv_data;
+@@ -755,6 +759,7 @@ static OSStatus videotoolbox_session_decode_frame(AVCodecContext *avctx)
+     if (!sample_buf)
+         return -1;
+ 
++    if (__builtin_available(macOS 10.8, iOS 8.0, tvOS 10.2, *)) {
+     status = VTDecompressionSessionDecodeFrame(videotoolbox->session,
+                                                sample_buf,
+                                                0,       // decodeFlags
+@@ -762,6 +767,7 @@ static OSStatus videotoolbox_session_decode_frame(AVCodecContext *avctx)
+                                                0);      // infoFlagsOut
+     if (status == noErr)
+         status = VTDecompressionSessionWaitForAsynchronousFrames(videotoolbox->session);
++    }
+ 
+     CFRelease(sample_buf);
+ 
+@@ -843,9 +849,9 @@ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec
+                                                                    &kCFTypeDictionaryValueCallBacks);
+ 
+     CFDictionarySetValue(config_info,
+-                         codec_type == kCMVideoCodecType_HEVC ?
+-                            kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder :
+-                            kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder,
++                         (avctx->hwaccel_flags & AV_HWACCEL_FLAG_ALLOW_SOFTWARE)
++                         ? kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder
++                         : kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder,
+                          kCFBooleanTrue);
+ 
+     avc_info = CFDictionaryCreateMutable(kCFAllocatorDefault,
+@@ -902,7 +908,7 @@ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec
+ static int videotoolbox_start(AVCodecContext *avctx)
+ {
+     AVVideotoolboxContext *videotoolbox = videotoolbox_get_context(avctx);
+-    OSStatus status;
++    OSStatus status = kVTInvalidSessionErr;
+     VTDecompressionOutputCallbackRecord decoder_cb;
+     CFDictionaryRef decoder_spec;
+     CFDictionaryRef buf_attr;
+@@ -996,6 +1002,7 @@ static int videotoolbox_start(AVCodecContext *avctx)
+     decoder_cb.decompressionOutputCallback = videotoolbox_decoder_callback;
+     decoder_cb.decompressionOutputRefCon   = avctx->internal->hwaccel_priv_data;
+ 
++    if (__builtin_available(macOS 10.8, iOS 8.0, tvOS 10.2, *))
+     status = VTDecompressionSessionCreate(NULL,                      // allocator
+                                           videotoolbox->cm_fmt_desc, // videoFormatDescription
+                                           decoder_spec,              // videoDecoderSpecification
+diff --git a/libavfilter/Makefile b/libavfilter/Makefile
+index 07fb4c3..b09e140 100644
+--- a/libavfilter/Makefile
++++ b/libavfilter/Makefile
+@@ -658,8 +658,8 @@ OBJS-$(CONFIG_AMOVIE_FILTER)                 += src_movie.o
+ OBJS-$(CONFIG_MOVIE_FILTER)                  += src_movie.o
+ 
+ # vulkan libs
+-OBJS-$(CONFIG_LIBGLSLANG)                    += vulkan_glslang.o
+-OBJS-$(CONFIG_LIBSHADERC)                    += vulkan_shaderc.o
++OBJS-$(CONFIG_LIBGLSLANG)                    += vulkan_glslang.o vulkan.o
++OBJS-$(CONFIG_LIBSHADERC)                    += vulkan_shaderc.o vulkan.o
+ 
+ # Objects duplicated from other libraries for shared builds
+ SHLIBOBJS                                    += log2_tab.o
+diff --git a/libavfilter/af_atempo.c b/libavfilter/af_atempo.c
+index 768840d..6ef40f8 100644
+--- a/libavfilter/af_atempo.c
++++ b/libavfilter/af_atempo.c
+@@ -154,7 +154,7 @@ typedef struct ATempoContext {
+     uint64_t nsamples_out;
+ } ATempoContext;
+ 
+-#define YAE_ATEMPO_MIN 0.5
++#define YAE_ATEMPO_MIN 0
+ #define YAE_ATEMPO_MAX 100.0
+ 
+ #define OFFSET(x) offsetof(ATempoContext, x)
+@@ -442,7 +442,7 @@ static int yae_load_data(ATempoContext *atempo,
+     }
+ 
+     // samples are not expected to be skipped, unless tempo is greater than 2:
+-    av_assert0(read_size <= atempo->ring || atempo->tempo > 2.0);
++    //av_assert0(read_size <= atempo->ring || atempo->tempo > 2.0);
+ 
+     while (atempo->position[0] < stop_here && src < src_end) {
+         int src_samples = (src_end - src) / atempo->stride;
+diff --git a/libavfilter/framesync.c b/libavfilter/framesync.c
+index 0d5779f..8db4e53 100644
+--- a/libavfilter/framesync.c
++++ b/libavfilter/framesync.c
+@@ -285,7 +285,7 @@ int ff_framesync_get_frame(FFFrameSync *fs, unsigned in, AVFrame **rframe,
+         for (i = 0; i < fs->nb_in && !need_copy; i++)
+             if (i != in && fs->in[i].sync &&
+                 (!fs->in[i].have_next || fs->in[i].pts_next < pts_next))
+-                need_copy = 1;
++                need_copy = 0;//CS by lfs
+         if (need_copy) {
+             if (!(frame = av_frame_clone(frame)))
+                 return AVERROR(ENOMEM);
+diff --git a/libavfilter/vf_overlay_cuda.c b/libavfilter/vf_overlay_cuda.c
+index 3d39458..3fdf668 100644
+--- a/libavfilter/vf_overlay_cuda.c
++++ b/libavfilter/vf_overlay_cuda.c
+@@ -388,7 +388,11 @@ static av_cold void overlay_cuda_uninit(AVFilterContext *avctx)
+     if (ctx->hwctx && ctx->cu_module) {
+         CUcontext dummy;
+         CudaFunctions *cu = ctx->hwctx->internal->cuda_dl;
+-        CHECK_CU(cu->cuCtxPushCurrent(ctx->cu_ctx));
++
++		//CS by lfs, avfilter_graph_free,not overaly blend, the ctx->cu_ctx=NULL
++		//CHECK_CU(cu->cuCtxPushCurrent(ctx->cu_ctx));
++		CHECK_CU(cu->cuCtxPushCurrent(ctx->hwctx->cuda_ctx));
++
+         CHECK_CU(cu->cuModuleUnload(ctx->cu_module));
+         CHECK_CU(cu->cuCtxPopCurrent(&dummy));
+     }
+diff --git a/libavfilter/vf_scale_npp.c b/libavfilter/vf_scale_npp.c
+index 1b1b7b9..9565470 100644
+--- a/libavfilter/vf_scale_npp.c
++++ b/libavfilter/vf_scale_npp.c
+@@ -609,6 +609,12 @@ static int init_processing_chain(AVFilterContext *ctx, int in_width, int in_heig
+         last_stage = i;
+     }
+ 
++    //cs by lfs memory leak
++    if (ctx->outputs[0]->hw_frames_ctx)
++    {
++        av_buffer_unref(&ctx->outputs[0]->hw_frames_ctx);
++    }
++
+     if (last_stage >= 0)
+         outl->hw_frames_ctx = av_buffer_ref(s->stages[last_stage].frames_ctx);
+     else
+diff --git a/libavformat/Makefile b/libavformat/Makefile
+index ab5551a..e83ce4a 100644
+--- a/libavformat/Makefile
++++ b/libavformat/Makefile
+@@ -715,6 +715,7 @@ TLS-OBJS-$(CONFIG_GNUTLS)                += tls_gnutls.o
+ TLS-OBJS-$(CONFIG_LIBTLS)                += tls_libtls.o
+ TLS-OBJS-$(CONFIG_MBEDTLS)               += tls_mbedtls.o
+ TLS-OBJS-$(CONFIG_OPENSSL)               += tls_openssl.o
++TLS-OBJS-$(CONFIG_WOLFSSL)               += tls_wolfssl.o
+ TLS-OBJS-$(CONFIG_SECURETRANSPORT)       += tls_securetransport.o
+ TLS-OBJS-$(CONFIG_SCHANNEL)              += tls_schannel.o
+ OBJS-$(CONFIG_TLS_PROTOCOL)              += tls.o $(TLS-OBJS-yes)
+diff --git a/libavformat/avio.c b/libavformat/avio.c
+index b146ac9..02c98b0 100644
+--- a/libavformat/avio.c
++++ b/libavformat/avio.c
+@@ -858,6 +858,14 @@ int ff_check_interrupt(AVIOInterruptCB *cb)
+         return cb->callback(cb->opaque);
+     return 0;
+ }
++//CS by lzy
++int ff_check_net_interrupt(AVIOInterruptCB* cb, int state)
++{
++    if (cb && cb->netCallback) {
++        return cb->netCallback(cb->opaque, state);
++    }
++    return 0;
++}
+ 
+ int ff_rename(const char *url_src, const char *url_dst, void *logctx)
+ {
+diff --git a/libavformat/avio.h b/libavformat/avio.h
+index ebf6111..432cacb 100644
+--- a/libavformat/avio.h
++++ b/libavformat/avio.h
+@@ -59,6 +59,7 @@
+ typedef struct AVIOInterruptCB {
+     int (*callback)(void*);
+     void *opaque;
++    int (*netCallback)(void*, int state);   //CS by lzy
+ } AVIOInterruptCB;
+ 
+ /**
+diff --git a/libavformat/demux.c b/libavformat/demux.c
+index 3749ab6..8190f1a 100644
+--- a/libavformat/demux.c
++++ b/libavformat/demux.c
+@@ -249,8 +249,10 @@ int avformat_open_input(AVFormatContext **ps, const char *filename,
+         goto fail;
+     }
+ 
+-    if ((ret = init_input(s, filename, &tmp)) < 0)
++    if ((ret = init_input(s, filename, &tmp)) < 0) {
++        av_loge(s, "init input error:%d", ret);  //CS by lzy
+         goto fail;
++    }
+     s->probe_score = ret;
+ 
+     if (!s->protocol_whitelist && s->pb && s->pb->protocol_whitelist) {
+@@ -2509,6 +2511,44 @@ static int extract_extradata(FFFormatContext *si, AVStream *st, const AVPacket *
+     return 0;
+ }
+ 
++//CS by lfs
++static int IsExit(AVFormatContext *ic, int isPreStreams)
++{
++	int i = 0;
++	int j = 0;
++
++	if (isPreStreams)
++	{
++		for (i = 0; i < ic->nb_streams; i++)
++		{
++			AVStream *const st = ic->streams[i];
++			FFStream *const sti = ffstream(st);
++			if (sti->codec_info_nb_frames > 0)
++			{
++				j++;
++			}
++		}
++		return (j == ic->nb_streams);
++	}
++	else // 3.4 and after, flv know nb_streams until read_packet, read_header is not known
++	{
++		for (i = 0; i < ic->nb_streams; i++)
++		{
++			AVStream *const st = ic->streams[i];
++			FFStream *const sti = ffstream(st);
++			if ((st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) && (sti->codec_info_nb_frames > 0))
++			{
++				j++;
++			}
++			if ((st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) && (sti->codec_info_nb_frames > 0))
++			{
++				j++;
++			}
++		}
++		return ((ic->nb_streams == 2) && (j == ic->nb_streams));
++	}
++}
++
+ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
+ {
+     FFFormatContext *const si = ffformatcontext(ic);
+@@ -2524,6 +2564,8 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
+     int64_t max_subtitle_analyze_duration;
+     int64_t probesize = ic->probesize;
+     int eof_reached = 0;
++	//CS by lfs
++	int isPreStreams = (ic->nb_streams > 0);
+ 
+     flush_codecs = probesize > 0;
+ 
+@@ -2839,6 +2881,11 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
+ 
+         sti->codec_info_nb_frames++;
+         count++;
++
++		//CS by lfs
++		if (IsExit(ic, isPreStreams)) {
++			break;
++    }
+     }
+ 
+     if (eof_reached) {
+diff --git a/libavformat/hls.c b/libavformat/hls.c
+index 22ee1c6..755de37 100644
+--- a/libavformat/hls.c
++++ b/libavformat/hls.c
+@@ -223,6 +223,7 @@ typedef struct HLSContext {
+     AVIOInterruptCB *interrupt_callback;
+     AVDictionary *avio_opts;
+     AVDictionary *seg_format_opts;
++    int seg_allow_img;
+     char *allowed_extensions;
+     char *allowed_segment_extensions;
+     int extension_picky;
+@@ -2312,7 +2313,31 @@ static int hls_read_header(AVFormatContext *s)
+             pls->ctx->max_analyze_duration = s->max_analyze_duration > 0 ? s->max_analyze_duration : 4 * AV_TIME_BASE;
+             pls->ctx->interrupt_callback = s->interrupt_callback;
+             url = av_strdup(pls->segments[0]->url);
+-            ret = av_probe_input_buffer(&pls->pb.pub, &in_fmt, url, NULL, 0, 0);
++
++            unsigned skip = 0;
++            if (!c->seg_allow_img) {
++                uint8_t b[10] = { 0 }; // probe at most 10
++                avio_read(&pls->pb.pub, b, sizeof(b));
++                avio_seek(&pls->pb.pub, 0, SEEK_SET);
++                const AVProbeData pd = {
++                    .buf = b,               // png, gif read_probe only use this field
++                    .buf_size = sizeof(b),
++                };
++// optional: ffifmt(av_find_input_format("gif" or "gif_pipe" or "png_pipe"))->read_probe
++                int max_score = AVPROBE_SCORE_MAX - 2; // png_pipe, gif, gif_pipe score >= AVPROBE_SCORE_MAX - 1
++                const AVInputFormat* img_fmt = av_probe_input_format2(&pd, 1, &max_score); //
++                if (img_fmt) {
++                    if (av_strstart(img_fmt->name, "png", NULL)) { // "png_pipe"
++                        skip = 3; // skip until ts sync byte 'G'(0x47)
++                        av_log(s, AV_LOG_INFO, "segments pretend to be png\n");
++                    } else if (av_strstart(img_fmt->name, "gif", NULL)) {    // "gif", "gif_pipe"
++                        skip = 10;
++                        av_log(s, AV_LOG_INFO, "segments pretend to be gif\n");
++                    }
++                }
++            }
++
++            ret = av_probe_input_buffer(&pls->pb.pub, &in_fmt, url, NULL, skip, 0);
+ 
+             for (int n = 0; n < pls->n_segments; n++)
+                 if (ret >= 0)
+@@ -2824,6 +2849,8 @@ static const AVOption hls_options[] = {
+         OFFSET(seg_format_opts), AV_OPT_TYPE_DICT, {.str = NULL}, 0, 0, FLAGS},
+     {"seg_max_retry", "Maximum number of times to reload a segment on error.",
+      OFFSET(seg_max_retry), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, FLAGS},
++    {"seg_allow_img", "Allow segments detected as gif and png images, 0 = disable, 1 = enable",
++        OFFSET(seg_allow_img), AV_OPT_TYPE_BOOL, { .i64 = 0}, 0, 1, FLAGS},
+     {NULL}
+ };
+ 
+diff --git a/libavformat/libsrt.c b/libavformat/libsrt.c
+index 9e860ab..c4f1953 100644
+--- a/libavformat/libsrt.c
++++ b/libavformat/libsrt.c
+@@ -198,9 +198,9 @@ static int libsrt_network_wait_fd(URLContext *h, int eid, int write)
+     SRTSOCKET error[1];
+ 
+     if (write) {
+-        ret = srt_epoll_wait(eid, error, &errlen, ready, &len, POLLING_TIME, 0, 0, 0, 0);
++        ret = srt_epoll_wait(eid, error, &errlen, ready, &len, 1/*POLLING_TIME*/, 0, 0, 0, 0);      //CS by lzy
+     } else {
+-        ret = srt_epoll_wait(eid, ready, &len, error, &errlen, POLLING_TIME, 0, 0, 0, 0);
++        ret = srt_epoll_wait(eid, ready, &len, error, &errlen, 1/*POLLING_TIME*/, 0, 0, 0, 0);
+     }
+     if (ret < 0) {
+         if (srt_getlasterror(NULL) == SRT_ETIMEOUT)
+@@ -232,6 +232,7 @@ static int libsrt_network_wait_fd_timeout(URLContext *h, int eid, int write, int
+             else if (av_gettime_relative() - wait_start > timeout)
+                 return AVERROR(ETIMEDOUT);
+         }
++        ff_check_net_interrupt(int_cb, ret); //CS by lzy
+     }
+ }
+ 
+diff --git a/libavformat/matroska.c b/libavformat/matroska.c
+index 60584e2..4b28df5 100644
+--- a/libavformat/matroska.c
++++ b/libavformat/matroska.c
+@@ -63,6 +63,7 @@ const CodecTags ff_mkv_codec_tags[]={
+     {"D_WEBVTT/CAPTIONS"    , AV_CODEC_ID_WEBVTT},
+     {"D_WEBVTT/DESCRIPTIONS", AV_CODEC_ID_WEBVTT},
+     {"D_WEBVTT/METADATA"    , AV_CODEC_ID_WEBVTT},
++    {"S_TEXT/WEBVTT"        , AV_CODEC_ID_WEBVTT},
+ 
+     {"S_TEXT/UTF8"      , AV_CODEC_ID_SUBRIP},
+     {"S_TEXT/UTF8"      , AV_CODEC_ID_TEXT},
+diff --git a/libavformat/matroskadec.c b/libavformat/matroskadec.c
+index 1e0c75c..4d01821 100644
+--- a/libavformat/matroskadec.c
++++ b/libavformat/matroskadec.c
+@@ -3771,6 +3771,7 @@ static int matroska_parse_webvtt(MatroskaDemuxContext *matroska,
+                                  MatroskaTrack *track,
+                                  AVStream *st,
+                                  uint8_t *data, int data_len,
++                                 MatroskaBlockMore *blockmore, int nb_blockmore,
+                                  uint64_t timecode,
+                                  uint64_t duration,
+                                  int64_t pos)
+@@ -3780,13 +3781,28 @@ static int matroska_parse_webvtt(MatroskaDemuxContext *matroska,
+     int id_len, settings_len, text_len;
+     uint8_t *p, *q;
+     int err;
++    const int webm_style = !strncmp(track->codec_id, "D_WEBVTT/", 9);
+ 
+     if (data_len <= 0)
+         return AVERROR_INVALIDDATA;
+ 
++    if (!webm_style) {
++        text = data;
++        text_len = data_len;
++        if (nb_blockmore <= 0)
++            goto make_pkt;
++        data = blockmore->additional.data;
++        data_len = blockmore->additional.size;
++    }
++
+     p = data;
+     q = data + data_len;
+ 
++    if (webm_style)
++        goto parse_id;
++    goto parse_settings;
++
++parse_id:
+     id = p;
+     id_len = -1;
+     while (p < q) {
+@@ -3802,7 +3818,11 @@ static int matroska_parse_webvtt(MatroskaDemuxContext *matroska,
+     if (p >= q || *p != '\n')
+         return AVERROR_INVALIDDATA;
+     p++;
++    if (webm_style)
++        goto parse_settings;
++    goto make_pkt;
+ 
++parse_settings:
+     settings = p;
+     settings_len = -1;
+     while (p < q) {
+@@ -3818,7 +3838,11 @@ static int matroska_parse_webvtt(MatroskaDemuxContext *matroska,
+     if (p >= q || *p != '\n')
+         return AVERROR_INVALIDDATA;
+     p++;
++    if (webm_style)
++        goto parse_text;
++    goto parse_id;
+ 
++parse_text:
+     text = p;
+     text_len = q - p;
+     while (text_len > 0) {
+@@ -3829,6 +3853,10 @@ static int matroska_parse_webvtt(MatroskaDemuxContext *matroska,
+         text_len = len;
+     }
+ 
++make_pkt:
++    if (text_len <= 0)
++        return AVERROR_INVALIDDATA;
++
+     err = av_new_packet(pkt, text_len);
+     if (err < 0) {
+         return err;
+@@ -4218,6 +4246,7 @@ static int matroska_parse_block(MatroskaDemuxContext *matroska, AVBufferRef *buf
+         } else if (st->codecpar->codec_id == AV_CODEC_ID_WEBVTT) {
+             res = matroska_parse_webvtt(matroska, track, st,
+                                         out_data, out_size,
++                                        blockmore, nb_blockmore,
+                                         timecode, lace_duration,
+                                         pos);
+             if (!buf)
+diff --git a/libavformat/mpegts.c b/libavformat/mpegts.c
+index 981dd8c..e6923f8 100644
+--- a/libavformat/mpegts.c
++++ b/libavformat/mpegts.c
+@@ -3385,7 +3385,7 @@ static int64_t mpegts_get_dts(AVFormatContext *s, int stream_index,
+             av_packet_free(&pkt);
+             return AV_NOPTS_VALUE;
+         }
+-        if (pkt->dts != AV_NOPTS_VALUE && pkt->pos >= 0) {
++        if (pkt->dts != AV_NOPTS_VALUE && pkt->pos >= 0  && (pkt->flags & AV_PKT_FLAG_KEY)) {
+             ff_reduce_index(s, pkt->stream_index);
+             av_add_index_entry(s->streams[pkt->stream_index], pkt->pos, pkt->dts, 0, 0, AVINDEX_KEYFRAME /* FIXME keyframe? */);
+             if (pkt->stream_index == stream_index && pkt->pos >= *ppos) {
+diff --git a/libavformat/network.c b/libavformat/network.c
+index a7026ac..e0d58ae 100644
+--- a/libavformat/network.c
++++ b/libavformat/network.c
+@@ -33,12 +33,17 @@
+ #include "libavutil/mem.h"
+ #include "libavutil/time.h"
+ 
++#define AV_HAVE_POLLING_TIME    1            //CS by lzy
++
+ int ff_tls_init(void)
+ {
+ #if CONFIG_TLS_PROTOCOL
+ #if CONFIG_GNUTLS
+     ff_gnutls_init();
+ #endif
++#if CONFIG_WOLFSSL
++    ff_wolfssl_init();
++#endif
+ #endif
+     return 0;
+ }
+@@ -49,6 +54,9 @@ void ff_tls_deinit(void)
+ #if CONFIG_GNUTLS
+     ff_gnutls_deinit();
+ #endif
++#if CONFIG_WOLFSSL
++    ff_wolfssl_deinit();
++#endif
+ #endif
+ }
+ 
+@@ -68,7 +76,11 @@ int ff_network_wait_fd(int fd, int write)
+     int ev = write ? POLLOUT : POLLIN;
+     struct pollfd p = { .fd = fd, .events = ev, .revents = 0 };
+     int ret;
++#if AV_HAVE_POLLING_TIME
+     ret = poll(&p, 1, POLLING_TIME);
++#else
++    ret = poll(&p, 1, 1);
++#endif // HAVE_NO_POLLING_TIME
+     return ret < 0 ? ff_neterrno() : p.revents & (ev | POLLERR | POLLHUP) ? 0 : AVERROR(EAGAIN);
+ }
+ 
+@@ -89,6 +101,8 @@ int ff_network_wait_fd_timeout(int fd, int write, int64_t timeout, AVIOInterrupt
+             else if (av_gettime_relative() - wait_start > timeout)
+                 return AVERROR(ETIMEDOUT);
+         }
++        if (ff_check_net_interrupt(int_cb, ret))    //CS by lzy
++            return AVERROR_EXIT;
+     }
+ }
+ 
+@@ -153,6 +167,7 @@ int ff_is_multicast_address(struct sockaddr *addr)
+     return 0;
+ }
+ 
++#if AV_HAVE_POLLING_TIME
+ static int ff_poll_interrupt(struct pollfd *p, nfds_t nfds, int timeout,
+                              AVIOInterruptCB *cb)
+ {
+@@ -170,12 +185,46 @@ static int ff_poll_interrupt(struct pollfd *p, nfds_t nfds, int timeout,
+                 continue;
+             break;
+         }
++        if (ff_check_net_interrupt(cb, ret))    //CS by lzy
++            return AVERROR_EXIT;
+     } while (timeout <= 0 || runs-- > 0);
+ 
+     if (!ret)
+         return AVERROR(ETIMEDOUT);
+     return ret;
+ }
++#else
++static int ff_poll_interrupt(struct pollfd* p, nfds_t nfds, int timeout,
++    AVIOInterruptCB* cb)
++{
++    int64_t time_left = 0;
++    int64_t wait_start = av_gettime_relative();
++    int ret = 0;
++
++    do {
++        if (ff_check_interrupt(cb))
++            return AVERROR_EXIT;
++        ret = poll(p, nfds, 0);
++        if (ret != 0) {
++            if (ret < 0)
++                ret = ff_neterrno();
++            if (ret == AVERROR(EINTR))
++                continue;
++            break;
++        }
++        time_left = timeout - (av_gettime_relative() - wait_start);
++        if (time_left <= 0)
++            return AVERROR(ETIMEDOUT);
++
++        if (ff_check_net_interrupt(cb, ret))
++            return AVERROR_EXIT;
++    } while (timeout <= 0 || time_left > 0);
++
++    if (!ret)
++        return AVERROR(ETIMEDOUT);
++    return ret;
++}
++#endif
+ 
+ int ff_socket(int af, int type, int proto, void *logctx)
+ {
+diff --git a/libavformat/protocols.c b/libavformat/protocols.c
+index d394454..72e781f 100644
+--- a/libavformat/protocols.c
++++ b/libavformat/protocols.c
+@@ -26,6 +26,7 @@
+ 
+ extern const URLProtocol ff_android_content_protocol;
+ extern const URLProtocol ff_async_protocol;
++extern const URLProtocol ff_exasync_protocol;
+ extern const URLProtocol ff_bluray_protocol;
+ extern const URLProtocol ff_cache_protocol;
+ extern const URLProtocol ff_concat_protocol;
+@@ -82,6 +83,31 @@ extern const URLProtocol ff_ipns_gateway_protocol;
+ 
+ #include "libavformat/protocol_list.c"
+ 
++//CS by lzy
++#if defined(AV_HAS_PROTOCOL_EX)
++#define AV_URL_PROTOCOL_MAX_NUM 100
++extern const URLProtocol* url_protocols_ext[AV_URL_PROTOCOL_MAX_NUM] = {
++        NULL
++};
++
++void av_register_protocol(const URLProtocol* p) {
++    int i = 0;
++
++    for (i = AV_URL_PROTOCOL_MAX_NUM - 2; i >= 0; i--) {
++        if (i == AV_URL_PROTOCOL_MAX_NUM - 2 && url_protocols_ext[i]) {
++            return;
++        }
++        else if (i < AV_URL_PROTOCOL_MAX_NUM - 2) {
++            url_protocols_ext[i + 1] = url_protocols_ext[i];
++        }
++
++    }
++
++    url_protocols_ext[0] = p;
++
++}
++#endif
++
+ const AVClass *ff_urlcontext_child_class_iterate(void **iter)
+ {
+     const AVClass *ret = NULL;
+@@ -127,11 +153,28 @@ const URLProtocol **ffurl_get_protocols(const char *whitelist,
+ {
+     const URLProtocol **ret;
+     int i, ret_idx = 0;
+-
++//CS by lzy
++#if defined(AV_HAS_PROTOCOL_EX)
++    ret = av_calloc(FF_ARRAY_ELEMS(url_protocols) + FF_ARRAY_ELEMS(url_protocols_ext), sizeof(*ret));
++#else
+     ret = av_calloc(FF_ARRAY_ELEMS(url_protocols), sizeof(*ret));
++#endif
+     if (!ret)
+         return NULL;
+ 
++#if defined(AV_HAS_PROTOCOL_EX)
++    for (i = 0; url_protocols_ext[i]; i++) {
++        const URLProtocol* up = url_protocols_ext[i];
++
++        if (whitelist && *whitelist && !av_match_name(up->name, whitelist))
++            continue;
++        if (blacklist && *blacklist && av_match_name(up->name, blacklist))
++            continue;
++
++        ret[ret_idx++] = up;
++    }
++#endif
++
+     for (i = 0; url_protocols[i]; i++) {
+         const URLProtocol *up = url_protocols[i];
+ 
+diff --git a/libavformat/tls.h b/libavformat/tls.h
+index df384da..18fc0dc 100644
+--- a/libavformat/tls.h
++++ b/libavformat/tls.h
+@@ -122,4 +122,7 @@ void ff_gnutls_deinit(void);
+ int ff_openssl_init(void);
+ void ff_openssl_deinit(void);
+ 
++void ff_wolfssl_init(void);
++void ff_wolfssl_deinit(void);
++
+ #endif /* AVFORMAT_TLS_H */
+diff --git a/libavformat/url.h b/libavformat/url.h
+index 0784d77..a575c20 100644
+--- a/libavformat/url.h
++++ b/libavformat/url.h
+@@ -32,6 +32,9 @@
+ #define URL_PROTOCOL_FLAG_NESTED_SCHEME 1 /*< The protocol name can be the first part of a nested protocol scheme */
+ #define URL_PROTOCOL_FLAG_NETWORK       2 /*< The protocol uses network */
+ 
++ //CS by lzy
++#define AV_HAS_PROTOCOL_EX 1
++
+ typedef struct URLContext {
+     const AVClass *av_class;    /**< information for av_log(). Set by url_open(). */
+     const struct URLProtocol *prot;
+@@ -96,6 +99,10 @@ typedef struct URLProtocol {
+     const char *default_whitelist;
+ } URLProtocol;
+ 
++#if defined(AV_HAS_PROTOCOL_EX)
++void av_register_protocol(const URLProtocol* p);
++#endif
++
+ /**
+  * Create a URLContext for accessing to the resource indicated by
+  * url, but do not initiate the connection yet.
+@@ -280,6 +287,7 @@ int ffurl_shutdown(URLContext *h, int flags);
+  * associated with cb.
+  */
+ int ff_check_interrupt(AVIOInterruptCB *cb);
++int ff_check_net_interrupt(AVIOInterruptCB* cb, int state);        //CS by lzy
+ 
+ /* udp.c */
+ int ff_udp_set_remote_url(URLContext *h, const char *uri);
+diff --git a/libavutil/buffer_internal.h b/libavutil/buffer_internal.h
+index adb916a..825b393 100644
+--- a/libavutil/buffer_internal.h
++++ b/libavutil/buffer_internal.h
+@@ -19,7 +19,14 @@
+ #ifndef AVUTIL_BUFFER_INTERNAL_H
+ #define AVUTIL_BUFFER_INTERNAL_H
+ 
++// CS by lzy
++#ifndef __cplusplus
+ #include <stdatomic.h>
++#else
++# include <atomic>
++# define _Atomic(X) std::atomic< X >
++typedef std::atomic<unsigned int> atomic_uint;
++#endif
+ #include <stdint.h>
+ 
+ #include "buffer.h"
+diff --git a/libavutil/hwcontext_d3d11va.c b/libavutil/hwcontext_d3d11va.c
+index 9831f53..5078a37 100644
+--- a/libavutil/hwcontext_d3d11va.c
++++ b/libavutil/hwcontext_d3d11va.c
+@@ -43,6 +43,9 @@
+ #include "compat/w32dlfcn.h"
+ 
+ #define MAX_ARRAY_SIZE 64 // Driver specification limits ArraySize to 64 for decoder-bound resources
++#ifndef CreateMutexEx
++#define CreateMutexEx(lpMutexAttributes, lpName, dwFlags, dwDesiredAccess) CreateMutex(lpMutexAttributes, lpName, dwFlags)
++#endif
+ 
+ typedef HRESULT(WINAPI *PFN_CREATE_DXGI_FACTORY)(REFIID riid, void **ppFactory);
+ 
+@@ -507,7 +510,7 @@ static int d3d11va_device_init(AVHWDeviceContext *hwdev)
+     HRESULT hr;
+ 
+     if (!device_hwctx->lock) {
+-        device_hwctx->lock_ctx = CreateMutex(NULL, 0, NULL);
++        device_hwctx->lock_ctx = CreateMutexEx(NULL, NULL, 0, 0);
+         if (device_hwctx->lock_ctx == INVALID_HANDLE_VALUE) {
+             av_log(NULL, AV_LOG_ERROR, "Failed to create a mutex\n");
+             return AVERROR(EINVAL);
+diff --git a/libavutil/hwcontext_vaapi.c b/libavutil/hwcontext_vaapi.c
+index 51af22a..ea1ec35 100644
+--- a/libavutil/hwcontext_vaapi.c
++++ b/libavutil/hwcontext_vaapi.c
+@@ -1645,8 +1645,10 @@ static void vaapi_device_free(AVHWDeviceContext *ctx)
+         XCloseDisplay(priv->x11_display);
+ #endif
+ 
++#if HAVE_VAAPI_DRM
+     if (priv->drm_fd >= 0)
+         close(priv->drm_fd);
++#endif
+ 
+     av_freep(&priv);
+ }
+diff --git a/libavutil/log.h b/libavutil/log.h
+index 4a111ca..408e2fa 100644
+--- a/libavutil/log.h
++++ b/libavutil/log.h
+@@ -266,7 +266,21 @@ typedef struct AVClass {
+  *        subsequent arguments are converted to output.
+  */
+ void av_log(void *avcl, int level, const char *fmt, ...) av_printf_format(3, 4);
+-
++//CS by lzy
++#define AV_HAVE_LOGDEF  0
++#if(AV_HAVE_LOGDEF)
++#if defined(__USE_GNUC)
++#define av_loge(target, fmt, args...)   av_log(target, AV_LOG_ERROR, "AVERR: " fmt "\n", ## args)
++#else
++#define av_loge(target, fmt, ...)   av_log(target, AV_LOG_ERROR, "AVERR: " fmt "\n", ## __VA_ARGS__)
++#endif
++#else
++#if defined(__USE_GNUC)
++#define av_loge(target, fmt, args...)
++#else
++#define av_loge(target, fmt, ...)
++#endif
++#endif
+ /**
+  * Send the specified message to the log once with the initial_level and then with
+  * the subsequent_level. By default, all logging messages are sent to
+diff --git a/libavutil/mem_internal.h b/libavutil/mem_internal.h
+index 78adc4f..db1afc1 100644
+--- a/libavutil/mem_internal.h
++++ b/libavutil/mem_internal.h
+@@ -24,7 +24,7 @@
+ #include "config.h"
+ 
+ #include <stdint.h>
+-#ifndef _MSC_VER
++#if !defined(_MSC_VER) || defined(__clang__)
+ #include <stdalign.h>
+ #endif
+ 
+@@ -80,7 +80,7 @@
+     #define DECLARE_ALIGNED_T(n,t,v)    alignas(FFMIN(n, 16)) t v
+     #define DECLARE_ASM_ALIGNED(n,t,v)  alignas(FFMIN(n, 16)) t av_used v
+     #define DECLARE_ASM_CONST(n,t,v)    alignas(FFMIN(n, 16)) static const t av_used v
+-#elif defined(_MSC_VER)
++#elif defined(_MSC_VER) && !defined(__clang__)
+     #define DECLARE_ALIGNED_T(n,t,v)    __declspec(align(n)) t v
+     #define DECLARE_ASM_ALIGNED(n,t,v)  __declspec(align(n)) t av_used v
+     #define DECLARE_ASM_CONST(n,t,v)    __declspec(align(n)) static const t av_used v
+diff --git a/libavutil/timestamp.h b/libavutil/timestamp.h
+index fa53a46..7e6da89 100644
+--- a/libavutil/timestamp.h
++++ b/libavutil/timestamp.h
+@@ -73,7 +73,9 @@ char *av_ts_make_time_string2(char *buf, int64_t ts, AVRational tb);
+ static inline char *av_ts_make_time_string(char *buf, int64_t ts,
+                                            const AVRational *tb)
+ {
+-    return av_ts_make_time_string2(buf, ts, *tb);
++    if (ts == AV_NOPTS_VALUE) snprintf(buf, AV_TS_MAX_STRING_SIZE, "NOPTS");
++    else                      snprintf(buf, AV_TS_MAX_STRING_SIZE, "%.6g", av_q2d(*tb) * ts);
++    return buf;
+ }
+ 
+ /**
+diff --git a/libavutil/xga_font_data.h b/libavutil/xga_font_data.h
+index 90d3cec..d57d28e 100644
+--- a/libavutil/xga_font_data.h
++++ b/libavutil/xga_font_data.h
+@@ -31,8 +31,8 @@
+ #include "version.h"
+ 
+ #if LIBAVUTIL_VERSION_MAJOR < 61
+-extern av_export_avutil const uint8_t avpriv_cga_font[2048];
+-extern av_export_avutil const uint8_t avpriv_vga16_font[4096];
++extern const uint8_t avpriv_cga_font[2048];
++extern const uint8_t avpriv_vga16_font[4096];
+ #endif
+ 
+ const uint8_t *avpriv_cga_font_get(void);
