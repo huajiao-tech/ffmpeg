@@ -1,0 +1,12 @@
+prefix=/Users/zhiyongleng/works/FFmpeg/dep_aos/srt/scripts/build-android/arm64-v8a
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: srt
+Description: SRT library set
+Version: 1.5.4
+Libs: -L${libdir} -lsrt   
+Libs.private:  -latomic -lm -lc++ -lm -l:libunwind.a -ldl -lc -l:libunwind.a -ldl
+Cflags: -I${includedir} -I${includedir}/srt
+Requires.private: openssl libcrypto
