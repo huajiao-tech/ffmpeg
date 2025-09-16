@@ -21,7 +21,7 @@
 
 // CS by lzy
 #ifndef __cplusplus
-# include <stdatomic.h>
+#include <stdatomic.h>
 #else
 # include <atomic>
 # define _Atomic(X) std::atomic< X >

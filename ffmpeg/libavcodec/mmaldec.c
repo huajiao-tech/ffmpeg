@@ -42,6 +42,7 @@
 #include "libavutil/buffer.h"
 #include "libavutil/common.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/log.h"
 
@@ -660,8 +661,8 @@ static int ffmal_copy_frame(AVCodecContext *avctx,  AVFrame *frame,
         int linesize[4];
 
         if (ctx->copy_frame) {
-            if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
-                goto done;
+        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+            goto done;
 
         av_image_fill_arrays(src, linesize,
                              buffer->data + buffer->type->video.offset[0],
@@ -679,7 +680,7 @@ static int ffmal_copy_frame(AVCodecContext *avctx,  AVFrame *frame,
                 goto done;
             memcpy(frame->data, src, sizeof(src));
             memcpy(frame->linesize, linesize, sizeof(linesize));
-        }
+    }
     }
 
     frame->sample_aspect_ratio = avctx->sample_aspect_ratio;

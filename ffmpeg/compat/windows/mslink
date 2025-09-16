@@ -1,14 +1,9 @@
 #!/bin/sh
 
-cmdlist=$(echo "$@"|md5sum |cut -d " " -f 1).txt # including all arguments
-echo $@>$cmdlist
-
 LINK_EXE_PATH=$(dirname "$(command -v cl)")/link
 if [ -x "$LINK_EXE_PATH" ]; then
-    "$LINK_EXE_PATH" @$cmdlist
+    "$LINK_EXE_PATH" $@
 else
-    link.exe @$cmdlist
+    link.exe $@
 fi
-ret=$?
-rm -f $cmdlist
-exit $ret
+exit $?

@@ -1,101 +1,82 @@
 Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
-version 7.0.1:
- lavc/flacdsp: do not assume maximum R-V VL
- avformat/flacdec: Reorder allocations to avoid leak on error
- avcodec/adts_parser: Don't presume buffer to be padded
- avformat/movenc: Check av_malloc()
- avcodec/vp8: Return error on error
- avformat/mov: store sample_sizes as unsigned ints
- avformat/vvc: fix parsing sps_subpic_id
- avformat/vvc: initialize some ptl flags
- avcodec/mscc & mwsc: Check loop counts before use
- avcodec/mpegvideo_enc: Fix potential overflow in RD
- avcodec/mpeg4videodec: assert impossible wrap points
- avcodec/mpeg12dec: Use 64bit in bit computation
- avcodec/vqcdec: Check init_get_bits8() for failure
- avcodec/vvc/dec: Check init_get_bits8() for failure
- avcodec/vble: Check av_image_get_buffer_size() for failure
- avcodec/vp3: Replace check by assert
- avcodec/vp8: Forward return of ff_vpx_init_range_decoder()
- avcodec/jpeg2000dec: remove ST=3 case
- avcodec/qsvdec: Check av_image_get_buffer_size() for failure
- avcodec/exr: Fix preview overflow
- avcodec/decode: decode_simple_internal() only implements audio and video
- avcodec/fmvc: remove dead assignment
- avcodec/h2645_sei: Remove dead checks
- avcodec/h264_slice: Remove dead sps check
- avcodec/lpc: copy levenson coeffs only when they have been computed
- avutil/tests/base64: Check with too short output array
- libavutil/base64: Try not to write over the array end
- avcodec/cbs_av1: Avoid shift overflow
- fftools/ffplay: Check return of swr_alloc_set_opts2()
- tools/opt_common: Check for malloc failure
- doc/examples/demux_decode: Simplify loop
- avformat/concatdec: Check file
- avcodec/mpegvideo_enc: Fix 1 line and one column images
- avcodec/amrwbdec: assert mode to be valid in decode_fixed_vector()
- avcodec/wavarc: fix integer overflow in decode_5elp() block type 2
- swscale/output: Fix integer overflow in yuv2rgba64_full_1_c_template()
- swscale/output: Fix integer overflow in yuv2rgba64_1_c_template
- avcodec/av1dec: Change bit_depth to int
- avcodec/av1dec: bit_depth cannot be another values than 8,10,12
- avcodec/avs3_parser: assert the return value of init_get_bits()
- avcodec/avs2_parser: Assert init_get_bits8() success with const size 15
- avfilter/avfiltergraph: return value of ff_request_frame() is unused
- avformat/mxfdec: Check body_offset
- avformat/kvag: Check sample_rate
- avcodec/atrac9dec: Check init_get_bits8() for failure
- avcodec/ac3_parser: Check init_get_bits8() for failure
- avcodec/pngdec: Check last AVFrame before deref
- avcodec/hevcdec: Check ref frame
- doc/examples/qsv_transcode: Initialize pointer before free
- doc/examples/qsv_transcode: Simplify str_to_dict() loop
- doc/examples/vaapi_transcode: Simplify loop
- doc/examples/qsv_transcode: Simplify loop
- avcodec/cbs_h2645: Check NAL space
- avfilter/vf_thumbnail_cuda: Set ret before checking it
- avfilter/signature_lookup: Dont copy uninitialized stuff around
- avfilter/signature_lookup: Fix 2 differences to the refernce SW
- avcodec/x86/vp3dsp_init: Set correct function pointer, fix crash
- avformat/mp3dec: change bogus error message if read_header encounters EOF
- avformat/mp3dec: simplify inner frame size check in mp3_read_header
- avformat/mp3dec: only call ffio_ensure_seekback once
- avcodec/cbs_h266: read vps_ptl_max_tid before using it
- avcodec/cbs_h266: fix sh_collocated_from_l0_flag and sh_collocated_ref_idx infer
- avformat/vvc: fix parsing some early VPS bitstream values
- avformat/vvc: fix writing general_constraint_info bytes
- avutil/ppc/cpu: Also use the machdep.altivec sysctl on NetBSD
- lavd/v4l2: Use proper field type for second parameter of ioctl() with BSD's
- vulkan_av1: Fix force_integer_mv value
- vaapi_av1: Fix force_integer_mv value
- av1dec: Add force_integer_mv derived field for decoder use
- avutil/iamf: fix offsets for mix_gain options
- avformat/iamfdec: check nb_streams in header read
- avformat/mov: free the infe allocated item data on failure
- avformat/iamf_writer: reject duplicated stream ids in a stream group
- avformat/mov: don't read key_size bytes twice in the keys atom
- avformat/mov: take into account the first eight bytes in the keys atom
- avformat/mov: fix the check for the heif item parsing loop
- avutil/iamf: fix mix_gain_class name
- av1dec: Fix RefFrameSignBias calculation
- avcodec/codec_par: always clear extradata_size in avcodec_parameters_to_context()
- avcodec/mediacodecenc: Fix return empty packet when bsf is used
- avcodec/hevcdec: Fix precedence, bogus film grain warning
- avcodec/hevcdec: fix segfault on invalid film grain metadata
- lavc/vvc: Skip enhancement layer NAL units
- avformat/mov: ignore old infe box versions
- vulkan_av1: add workaround for NVIDIA drivers tested on broken CTS
- lavc/vulkan_av1: Use av1dec reference order hint information
- lavc/av1: Record reference ordering information for each frame
- doc/encoders: add missing libxvid option
- doc/encoders: remove non-existent flag
- fate/ffmpeg: Avoid dependency on samples
- avcodec/wavpack: Remove always-false check
- avcodec/wavpack: Fix leak and segfault on reallocation error
- avcodec/lossless_videoencdsp: Don't presume alignment in diff_bytes
- avcodec/ppc/h264dsp: Fix left shifts of negative numbers
+
+version 8.0:
+- Whisper filter
+- Drop support for OpenSSL < 1.1.0
+- Enable TLS peer certificate verification by default (on next major version bump)
+- yasm support dropped, users need to use nasm
+- VVC VAAPI decoder
+- RealVideo 6.0 decoder
+- OpenMAX encoders deprecated
+- libx265 alpha layer encoding
+- ADPCM IMA Xbox decoder
+- Enhanced FLV v2: Multitrack audio/video, modern codec support
+- Animated JPEG XL encoding (via libjxl)
+- VVC in Matroska
+- CENC AV1 support in MP4 muxer
+- pngenc: set default prediction method to PAETH
+- APV decoder and APV raw bitstream muxing and demuxing
+- APV parser
+- APV encoding support through a libopenapv wrapper
+- VVC decoder supports all content of SCC (Screen Content Coding):
+  IBC (Inter Block Copy), Palette Mode and ACT (Adaptive Color Transform
+- G.728 decoder
+- pad_cuda filter
+- Sanyo LD-ADPCM decoder
+- APV in MP4/ISOBMFF muxing and demuxing
+- OpenHarmony hardware decoder/encoder
+- Colordetect filter
+- Add vf_scale_d3d11 filter
+- No longer disabling GCC autovectorization, on X86, ARM and AArch64
+- VP9 Vulkan hwaccel
+- AV1 Vulkan encoder
+- ProRes RAW decoder
+- ProRes RAW Vulkan hwaccel
+
+
+version 7.1:
+- Raw Captions with Time (RCWT) closed caption demuxer
+- LC3/LC3plus decoding/encoding using external library liblc3
+- ffmpeg CLI filtergraph chaining
+- LC3/LC3plus demuxer and muxer
+- pad_vaapi, drawbox_vaapi filters
+- vf_scale supports secondary ref input and framesync options
+- vf_scale2ref deprecated
+- qsv_params option added for QSV encoders
+- VVC decoder compatible with DVB test content
+- xHE-AAC decoder
+- removed DEC Alpha DSP and support code
+- VVC encoding support via libvvenc
+- perlin video source
+- D3D12VA HEVC encoder
+- Cropping metadata parsing and writing in Matroska and MP4/MOV de/muxers
+- Intel QSV-accelerated VVC decoding
+- MediaCodec AAC/AMR-NB/AMR-WB/MP3 decoding
+- YUV colorspace negotiation for codecs and filters, obsoleting the
+  YUVJ pixel format
+- Vulkan H.264 encoder
+- Vulkan H.265 encoder
+- stream specifiers in fftools can now match by stream disposition
+- LCEVC enhancement data exporting in H.26x and MP4/ISOBMFF
+- LCEVC filter
+- MV-HEVC decoding
+- minor stream specifier syntax changes:
+    - when matching by metadata (:m:<key>:<val>), the colon character
+      in keys or values now has to be backslash-escaped
+    - in optional maps (-map ....?) with a metadata-matching stream specifier,
+      the value has to be separated from the question mark by a colon, i.e.
+      -map ....:m:<key>:<val>:? (otherwise it would be ambiguous whether the
+      question mark is a part of <val> or not)
+    - multiple stream types in a single specifier (e.g. :s:s:0) now cause an
+      error, as such a specifier makes no sense
+- Mastering Display and Content Light Level metadata support in hevc_nvenc
+  and av1_nvenc encoders
+- libswresample now accepts custom order channel layouts as input, with some
+  constrains
+- FFV1 parser
+
 
 version 7.0:
 - DXV DXT1 encoder
@@ -183,6 +164,7 @@ version 6.1:
   variable-fields elements within the same parent element
 - ffprobe -output_format option added as an alias of -of
 
+# codespell:off
 
 version 6.0:
 - Radiance HDR image support

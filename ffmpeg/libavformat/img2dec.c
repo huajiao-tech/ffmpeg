@@ -25,11 +25,12 @@
 #define _DEFAULT_SOURCE
 #define _BSD_SOURCE
 #include <sys/stat.h>
+#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/log.h"
+#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
-#include "libavutil/parseutils.h"
 #include "libavutil/intreadwrite.h"
 #include "libavcodec/gif.h"
 #include "avformat.h"
@@ -373,7 +374,7 @@ int ff_img_read_header(AVFormatContext *s1)
             st->codecpar->codec_id = ff_guess_image2_codec(s->path);
         if (st->codecpar->codec_id == AV_CODEC_ID_LJPEG)
             st->codecpar->codec_id = AV_CODEC_ID_MJPEG;
-        if (st->codecpar->codec_id == AV_CODEC_ID_ALIAS_PIX) // we cannot distingiush this from BRENDER_PIX
+        if (st->codecpar->codec_id == AV_CODEC_ID_ALIAS_PIX) // we cannot distinguish this from BRENDER_PIX
             st->codecpar->codec_id = AV_CODEC_ID_NONE;
     }
     if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
@@ -504,6 +505,7 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
     pkt->flags       |= AV_PKT_FLAG_KEY;
     if (s->ts_from_file) {
         struct stat img_stat;
+        av_assert0(!s->is_pipe); // The ts_from_file option is not supported by piped input demuxers
         if (stat(filename, &img_stat)) {
             res = AVERROR(EIO);
             goto fail;
@@ -561,6 +563,7 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
         }
         goto fail;
     } else {
+        memset(pkt->data + pkt->size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
         s->img_count++;
         s->img_number++;
         s->pts++;
@@ -794,13 +797,14 @@ static int jpeg_probe(const AVProbeData *p)
                 return 0;
             state = EOI;
             break;
-        case DQT:
         case APP0:
-            if (AV_RL32(&b[i + 4]) == MKTAG('J','F','I','F'))
+            if (c == APP0 && AV_RL32(&b[i + 4]) == MKTAG('J','F','I','F'))
                 got_header = 1;
+            /* fallthrough */
         case APP1:
-            if (AV_RL32(&b[i + 4]) == MKTAG('E','x','i','f'))
+            if (c == APP1 && AV_RL32(&b[i + 4]) == MKTAG('E','x','i','f'))
                 got_header = 1;
+            /* fallthrough */
         case APP2:
         case APP3:
         case APP4:
@@ -815,6 +819,7 @@ static int jpeg_probe(const AVProbeData *p)
         case APP13:
         case APP14:
         case APP15:
+        case DQT: /* fallthrough */
         case COM:
             i += AV_RB16(&b[i + 2]) + 1;
             break;

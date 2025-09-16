@@ -21,6 +21,7 @@
 
 #include "libavutil/common.h"
 #include "libavutil/lls.h"
+#include "libavutil/mem.h"
 #include "libavutil/mem_internal.h"
 
 #define LPC_USE_DOUBLE
@@ -119,9 +120,8 @@ static void lpc_compute_autocorr_c(const double *data, ptrdiff_t len, int lag,
 
     if(j==lag){
         double sum = 1.0;
-        for(i=j-1; i<len; i+=2){
-            sum += data[i  ] * data[i-j  ]
-                 + data[i+1] * data[i-j+1];
+        for(i=j-1; i<len; i++){
+            sum += data[i] * data[i-j];
         }
         autoc[j] = sum;
     }
@@ -267,7 +267,7 @@ int ff_lpc_calc_coefs(LPCContext *s,
 
         s->lpc_compute_autocorr(s->windowed_samples, blocksize, max_order, autoc);
 
-        compute_lpc_coefs(autoc, max_order, &lpc[0][0], MAX_LPC_ORDER, 0, 1);
+        compute_lpc_coefs(autoc, 0, max_order, &lpc[0][0], MAX_LPC_ORDER, 0, 1, NULL);
 
         for(i=0; i<max_order; i++)
             ref[i] = fabs(lpc[i][i]);

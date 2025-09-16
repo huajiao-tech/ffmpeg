@@ -63,6 +63,7 @@ const CodecTags ff_mkv_codec_tags[]={
     {"D_WEBVTT/CAPTIONS"    , AV_CODEC_ID_WEBVTT},
     {"D_WEBVTT/DESCRIPTIONS", AV_CODEC_ID_WEBVTT},
     {"D_WEBVTT/METADATA"    , AV_CODEC_ID_WEBVTT},
+    {"S_TEXT/WEBVTT"        , AV_CODEC_ID_WEBVTT},
 
     {"S_TEXT/UTF8"      , AV_CODEC_ID_SUBRIP},
     {"S_TEXT/UTF8"      , AV_CODEC_ID_TEXT},
@@ -82,6 +83,7 @@ const CodecTags ff_mkv_codec_tags[]={
     {"V_AVS3"           , AV_CODEC_ID_AVS3},
     {"V_DIRAC"          , AV_CODEC_ID_DIRAC},
     {"V_FFV1"           , AV_CODEC_ID_FFV1},
+    {"V_JPEG2000"       , AV_CODEC_ID_JPEG2000},
     {"V_MJPEG"          , AV_CODEC_ID_MJPEG},
     {"V_MPEG1"          , AV_CODEC_ID_MPEG1VIDEO},
     {"V_MPEG2"          , AV_CODEC_ID_MPEG2VIDEO},
@@ -90,6 +92,7 @@ const CodecTags ff_mkv_codec_tags[]={
     {"V_MPEG4/ISO/SP"   , AV_CODEC_ID_MPEG4},
     {"V_MPEG4/ISO/AVC"  , AV_CODEC_ID_H264},
     {"V_MPEGH/ISO/HEVC" , AV_CODEC_ID_HEVC},
+    {"V_MPEGI/ISO/VVC"  , AV_CODEC_ID_VVC},
     {"V_MPEG4/MS/V3"    , AV_CODEC_ID_MSMPEG4V3},
     {"V_PRORES"         , AV_CODEC_ID_PRORES},
     {"V_REAL/RV10"      , AV_CODEC_ID_RV10},

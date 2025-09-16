@@ -20,10 +20,12 @@
  */
 
 #include "libavutil/channel_layout.h"
+#include "libavutil/mem.h"
 #include "libavcodec/avcodec.h"
 #include "libavcodec/bytestream.h"
 #include "libavcodec/flac.h"
 #include "avformat.h"
+#include "avio_internal.h"
 #include "demux.h"
 #include "flac_picture.h"
 #include "internal.h"
@@ -79,8 +81,13 @@ static int flac_read_header(AVFormatContext *s)
 
     /* process metadata blocks */
     while (!avio_feof(s->pb) && !metadata_last) {
-        if (avio_read(s->pb, header, 4) != 4)
-            return AVERROR_INVALIDDATA;
+        ret = avio_read(s->pb, header, 4);
+        if (ret < 0) {
+            return ret;
+        } else if (ret != 4) {
+            return AVERROR_EOF;
+        }
+
         flac_parse_block_header(header, &metadata_last, &metadata_type,
                                    &metadata_size);
         switch (metadata_type) {
@@ -94,8 +101,9 @@ static int flac_read_header(AVFormatContext *s)
             if (!buffer) {
                 return AVERROR(ENOMEM);
             }
-            if (avio_read(s->pb, buffer, metadata_size) != metadata_size) {
-                RETURN_ERROR(AVERROR(EIO));
+            ret = ffio_read_size(s->pb, buffer, metadata_size);
+            if (ret < 0) {
+                RETURN_ERROR(ret);
             }
             break;
         /* skip metadata block for unsupported types */

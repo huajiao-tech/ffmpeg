@@ -86,13 +86,13 @@ static av_unused int pthread_create(pthread_t *thread, const void *unused_attr,
     thread->arg    = arg;
 #if HAVE_WINRT
     thread->handle = (void*)CreateThread(NULL, 0, win32thread_worker, thread,
-                                           0, NULL);
+                                      0, NULL);
 #else
     thread->handle = (void*)_beginthreadex(NULL, 0, win32thread_worker, thread,
-                                           0, NULL);
+                                        0, NULL);
 #endif
     return !thread->handle;
-}
+    }
 
 static av_unused int pthread_join(pthread_t thread, void **value_ptr)
 {

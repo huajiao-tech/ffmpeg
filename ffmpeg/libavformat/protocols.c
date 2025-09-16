@@ -63,9 +63,10 @@ extern const URLProtocol ff_subfile_protocol;
 extern const URLProtocol ff_tee_protocol;
 extern const URLProtocol ff_tcp_protocol;
 extern const URLProtocol ff_tls_protocol;
+extern const URLProtocol ff_dtls_protocol;
 extern const URLProtocol ff_udp_protocol;
 extern const URLProtocol ff_udplite_protocol;
-//extern const URLProtocol ff_unix_protocol;
+extern const URLProtocol ff_unix_protocol;
 extern const URLProtocol ff_libamqp_protocol;
 extern const URLProtocol ff_librist_protocol;
 extern const URLProtocol ff_librtmp_protocol;
@@ -81,6 +82,31 @@ extern const URLProtocol ff_ipfs_gateway_protocol;
 extern const URLProtocol ff_ipns_gateway_protocol;
 
 #include "libavformat/protocol_list.c"
+
+//CS by lzy
+#if defined(AV_HAS_PROTOCOL_EX)
+#define AV_URL_PROTOCOL_MAX_NUM 100
+extern const URLProtocol* url_protocols_ext[AV_URL_PROTOCOL_MAX_NUM] = {
+        NULL
+};
+
+void av_register_protocol(const URLProtocol* p) {
+    int i = 0;
+
+    for (i = AV_URL_PROTOCOL_MAX_NUM - 2; i >= 0; i--) {
+        if (i == AV_URL_PROTOCOL_MAX_NUM - 2 && url_protocols_ext[i]) {
+            return;
+        }
+        else if (i < AV_URL_PROTOCOL_MAX_NUM - 2) {
+            url_protocols_ext[i + 1] = url_protocols_ext[i];
+        }
+
+    }
+
+    url_protocols_ext[0] = p;
+
+}
+#endif
 
 const AVClass *ff_urlcontext_child_class_iterate(void **iter)
 {
@@ -127,10 +153,27 @@ const URLProtocol **ffurl_get_protocols(const char *whitelist,
 {
     const URLProtocol **ret;
     int i, ret_idx = 0;
-
+//CS by lzy
+#if defined(AV_HAS_PROTOCOL_EX)
+    ret = av_calloc(FF_ARRAY_ELEMS(url_protocols) + FF_ARRAY_ELEMS(url_protocols_ext), sizeof(*ret));
+#else
     ret = av_calloc(FF_ARRAY_ELEMS(url_protocols), sizeof(*ret));
+#endif
     if (!ret)
         return NULL;
+
+#if defined(AV_HAS_PROTOCOL_EX)
+    for (i = 0; url_protocols_ext[i]; i++) {
+        const URLProtocol* up = url_protocols_ext[i];
+
+        if (whitelist && *whitelist && !av_match_name(up->name, whitelist))
+            continue;
+        if (blacklist && *blacklist && av_match_name(up->name, blacklist))
+            continue;
+
+        ret[ret_idx++] = up;
+    }
+#endif
 
     for (i = 0; url_protocols[i]; i++) {
         const URLProtocol *up = url_protocols[i];
