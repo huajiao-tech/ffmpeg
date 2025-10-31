@@ -44,6 +44,7 @@ echo begin configure dir:$ROOT_DIR OPENSSL_HEADS:$OPENSSL_HEADS
     --enable-version3 \
     --enable-small \
 --enable-asm \
+--disable-x86asm \
 --disable-doc \
 --disable-debug \
 --disable-programs \
@@ -51,7 +52,6 @@ echo begin configure dir:$ROOT_DIR OPENSSL_HEADS:$OPENSSL_HEADS
 --disable-ffplay \
 --disable-ffprobe \
 --disable-avdevice \
---disable-postproc \
 --disable-vulkan \
 --disable-hwaccels \
 --disable-cuda-llvm \
@@ -63,8 +63,6 @@ echo begin configure dir:$ROOT_DIR OPENSSL_HEADS:$OPENSSL_HEADS
     --enable-encoder=png \
 	--enable-libx264 \
 	--enable-encoder=libx264 \
-    --enable-libx265 \
-	--enable-encoder=libx265 \
 --disable-decoders \
     --enable-decoder=mpeg4 \
     --enable-decoder=h264 \
@@ -98,9 +96,13 @@ echo begin configure dir:$ROOT_DIR OPENSSL_HEADS:$OPENSSL_HEADS
 --pkg-config-flags="--static" \
 --install_name_dir=@rpath \
 --sysroot=$(xcrun --sdk iphoneos --show-sdk-path) \
---extra-cflags="-iwithsysroot /usr/include/libxml2 -arch $ARCH -miphoneos-version-min=9.0 -I$OPENSSL_HEADS -I$X264_HEADS -I$X265_HEADS" \
---extra-ldflags="-arch $ARCH -miphoneos-version-min=9.0 -Wl,-dead_strip -L$OPENSSL_LIBS -L$X264_LIBS -L$X265_LIBS" \
---extra-libs="-lssl -lcrypto -lx264 -lx265"
+--extra-cflags="-iwithsysroot /usr/include/libxml2 -arch $ARCH -miphoneos-version-min=9.0 -I$OPENSSL_HEADS -I$X264_HEADS" \
+--extra-ldflags="-arch $ARCH -miphoneos-version-min=9.0 -Wl,-dead_strip -L$OPENSSL_LIBS -L$X264_LIBS" \
+--extra-libs="-lssl -lcrypto -lx264"
+
+make clean
+make -j8
+make install
 
 echo compile end
 
