@@ -2515,7 +2515,9 @@ static int extract_extradata(FFFormatContext *si, AVStream *st, const AVPacket *
 static int IsExit(AVFormatContext *ic, int isPreStreams)
 {
 	int i = 0;
-	int j = 0;
+    int j = 0;
+    int valid = 0;
+    int64_t duration_max = 0;
 
 	if (isPreStreams)
 	{
@@ -2525,28 +2527,74 @@ static int IsExit(AVFormatContext *ic, int isPreStreams)
 			FFStream *const sti = ffstream(st);
 			if (sti->codec_info_nb_frames > 0)
 			{
+                duration_max = FFMAX(duration_max, sti->cur_dts - sti->first_dts);
 				j++;
 			}
 		}
-		return (j == ic->nb_streams);
+        valid = (j == ic->nb_streams);
+
+        if (!valid && ic->mflag_disable > 0 && duration_max > ic->mflag_timeout)
+        {
+            for (i = 0; i < ic->nb_streams; i++)
+            {
+                AVStream* const st = ic->streams[i];
+                FFStream* const sti = ffstream(st);
+                if (sti->codec_info_nb_frames > 0)
+                {
+                    av_log(ic, AV_LOG_INFO, "mflag disable codec_info_nb_frames: %d", sti->codec_info_nb_frames);
+                    duration_max = FFMAX(duration_max, sti->cur_dts - sti->first_dts);
+                    j++;
+                }
+            }
+            valid = (j >= ic->nb_streams);
+        }
 	}
 	else // 3.4 and after, flv know nb_streams until read_packet, read_header is not known
 	{
+        int codec_info_nb_frames_max = 0;
+        
+
 		for (i = 0; i < ic->nb_streams; i++)
 		{
 			AVStream *const st = ic->streams[i];
 			FFStream *const sti = ffstream(st);
 			if ((st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) && (sti->codec_info_nb_frames > 0))
 			{
+                codec_info_nb_frames_max = FFMAX(codec_info_nb_frames_max, sti->codec_info_nb_frames);
+                duration_max = FFMAX(duration_max, sti->cur_dts - sti->first_dts);
 				j++;
 			}
 			if ((st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) && (sti->codec_info_nb_frames > 0))
 			{
+                codec_info_nb_frames_max = FFMAX(codec_info_nb_frames_max, sti->codec_info_nb_frames);
+                duration_max = FFMAX(duration_max, sti->cur_dts - sti->first_dts);
 				j++;
 			}
 		}
-		return ((ic->nb_streams == 2) && (j == ic->nb_streams));
+		valid = ((ic->nb_streams == 2) && (j == ic->nb_streams));
+        //
+        if (!valid && ic->mflag_disable > 0 && duration_max > ic->mflag_timeout)
+        {
+            av_log(ic, AV_LOG_INFO, "mflag disable duration_max: %" PRId64", mflag_timeout:%" PRId64", codec_info_nb_frames_max:%d", duration_max, ic->mflag_timeout, codec_info_nb_frames_max);
+            for (i = 0; i < ic->nb_streams; i++)
+            {
+                AVStream* const st = ic->streams[i];
+                FFStream* const sti = ffstream(st);
+                if ((st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) && ((sti->codec_info_nb_frames > 0) || (ic->mflag_disable & 1)))
+                {
+                    av_log(ic, AV_LOG_INFO, "mflag disable video codec_info_nb_frames: %d", sti->codec_info_nb_frames);
+                    j++;
+                }
+                if ((st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) && ((sti->codec_info_nb_frames > 0) || (ic->mflag_disable & 2)))
+                {
+                    av_log(ic, AV_LOG_INFO, "mflag disable audio codec_info_nb_frames: %d", sti->codec_info_nb_frames);
+                    j++;
+                }
+            }
+            valid = (j >= ic->nb_streams);
+        }
 	}
+    return valid;
 }
 
 int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
@@ -2885,7 +2933,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
 		//CS by lfs
 		if (IsExit(ic, isPreStreams)) {
 			break;
-    }
+		}
     }
 
     if (eof_reached) {

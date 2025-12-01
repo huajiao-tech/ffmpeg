@@ -596,10 +596,10 @@ int ffurl_closep(URLContext **hh)
     if (h->is_connected && h->prot->url_close)
         ret = h->prot->url_close(h);
 #if CONFIG_NETWORK
-    if (h->prot->flags & URL_PROTOCOL_FLAG_NETWORK)
+    if (h->prot && h->prot->flags & URL_PROTOCOL_FLAG_NETWORK)
         ff_network_close();
 #endif
-    if (h->prot->priv_data_size) {
+    if (h->prot && h->prot->priv_data_size) {
         if (h->prot->priv_data_class)
             av_opt_free(h->priv_data);
         av_freep(&h->priv_data);
